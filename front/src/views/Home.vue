@@ -125,7 +125,7 @@
               <h2>二维地图可视化</h2>
             </section>
             <div class="map-container-full">
-              <BaiduMapViewer @view-trend="handleViewTrend" />
+              <BaiduMapViewer ref="baiduMapRef" @view-trend="handleViewTrend" />
             </div>
           </div>
 
@@ -135,7 +135,7 @@
               <h2>三维可视化监测</h2>
             </section>
             <div class="map-container-full">
-              <CesiumViewer />
+              <CesiumViewer ref="cesiumRef" />
             </div>
           </div>
 
@@ -1573,6 +1573,10 @@ const systemName = ref('文化遗产地环境监测')
 // 当前激活的菜单
 const activeMenu = ref('map') // 默认选中地图可视化菜单
 
+// 地图组件引用，用于刷新数据
+const baiduMapRef = ref(null)
+const cesiumRef = ref(null)
+
 // Cesium相关变量
 let viewer = null
 const show3DMarkers = ref(true)
@@ -1670,11 +1674,23 @@ const handleMenuClick = (menu) => {
   nextTick(() => {
     switch (menu) {
       case 'map':
-      case '3d':
         // 地图组件需要额外的延迟来确保容器尺寸正确
         setTimeout(() => {
           // 触发窗口resize事件，让地图组件重新计算尺寸
           window.dispatchEvent(new Event('resize'))
+          // 刷新地图数据，显示新增的区域
+          if (baiduMapRef.value && baiduMapRef.value.loadData) {
+            baiduMapRef.value.loadData()
+          }
+        }, 150)
+        break
+      case '3d':
+        setTimeout(() => {
+          window.dispatchEvent(new Event('resize'))
+          // 刷新三维地图数据
+          if (cesiumRef.value && cesiumRef.value.loadData) {
+            cesiumRef.value.loadData()
+          }
         }, 150)
         break
       case 'monitor':

@@ -9,7 +9,7 @@
       </div>
       
       <h4 style="margin-top: 20px;">遗产地快速定位</h4>
-      <button v-for="area in areas" :key="area.id" @click="flyToArea(area)" class="view-btn">
+      <button v-for="area in areas" :key="area.id" @click="flyToArea(area)" :class="['view-btn', {active: selectedArea && selectedArea.id === area.id}]">
         {{ area.areaName }}
       </button>
       
@@ -132,9 +132,11 @@ export default {
       deviceData: null,
       markers: [],
       boundaries: [],
+      boundaryLines: [], // 地面视角时使用的边界轮廓线
       environmentEntities: [],
+      areaMask: null, // 遮罩层，用于隐藏遗产边界外的区域
       administrativeEntities: [],
-      viewMode: 'heritage', // space, ground, heritage
+      viewMode: null, // space, ground, heritage - 默认不选中
       tourMode: 'free', // free, path
       isTourPlaying: false,
       tourAnimation: null,
@@ -207,28 +209,28 @@ export default {
         this.viewer = new Cesium.Viewer('cesium-container', {
           // 使用默认椭球地形（不需要Token）
           terrainProvider: new Cesium.EllipsoidTerrainProvider(),
-          
+
           // 使用高德地图影像（国内访问稳定，不需要Token）
-          // 高德卫星影像: https://webst0{1-4}.is.autonavi.com/appmaptile?style=6&x={x}&y={y}&z={z}
-          // 高德街道地图: https://webrd0{1-4}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}
           imageryProvider: new Cesium.UrlTemplateImageryProvider({
             url: 'https://webst02.is.autonavi.com/appmaptile?style=6&x={x}&y={y}&z={z}',
             minimumLevel: 3,
             maximumLevel: 18
           }),
-          
-          baseLayerPicker: false, // 禁用图层选择器（避免需要Token）
-          geocoder: false, // 隐藏地理编码搜索（避免需要Token）
+
+          baseLayerPicker: false,
+          geocoder: false,
           homeButton: true,
-          sceneModePicker: true, // 显示场景模式选择器
+          sceneModePicker: true,
           navigationHelpButton: true,
-          animation: true, // 显示动画控件
-          timeline: true, // 显示时间轴
+          animation: true,
+          timeline: true,
           fullscreenButton: true,
           vrButton: false,
           scene3DOnly: false,
-          shadows: false, // 禁用阴影以提高性能
-          shouldAnimate: true
+          shadows: false,
+          shouldAnimate: true,
+          selectionIndicator: false, // 禁用选中指示器，避免相机锁定
+          infoBox: false // 禁用内置InfoBox，使用自定义弹窗
         })
         
         console.log('Cesium创建成功')
@@ -303,24 +305,37 @@ export default {
     updateMarkersWithSeasonData() {
       // 根据选择的季节和时段更新标记点的颜色和数据
       if (!this.viewer) return
-      
-      // 清除现有标记
+
+      // 清除现有标记和边界
       this.markers.forEach(marker => this.viewer.entities.remove(marker))
       this.markers = []
-      
+      this.boundaries.forEach(boundary => this.viewer.entities.remove(boundary))
+      this.boundaries = []
+      this.boundaryLines.forEach(line => this.viewer.entities.remove(line))
+      this.boundaryLines = []
+      // 清除遮罩
+      if (this.areaMask) {
+        this.viewer.entities.remove(this.areaMask)
+        this.areaMask = null
+      }
+
       // 重新渲染区域
       this.renderAreas()
+      // 如果当前不显示周边环境，重新创建遮罩
+      if (!this.showEnvironment) {
+        this.renderAreaMask()
+      }
     },
     
     renderAreas() {
       if (!this.viewer) return
-      
+
       this.areas.forEach(area => {
-        // 渲染区域边界（遗产本体）
-        if (area.boundaryPoints && this.showBoundaries) {
+        // 渲染区域边界（遗产本体）- 自动生成边界点
+        if (area.latitude && area.longitude && this.showBoundaries) {
           this.renderBoundary(area)
         }
-        
+
         // 渲染设备点位
         if (area.devices && this.showMarkers) {
           area.devices.forEach(device => {
@@ -342,20 +357,30 @@ export default {
     
     renderBoundary(area) {
       try {
-        const points = JSON.parse(area.boundaryPoints)
-        const positions = points.map(p => Cesium.Cartesian3.fromDegrees(p[0], p[1], area.altitude || 0))
-        
+        // 如果没有boundaryPoints，根据经纬度自动生成矩形边界
+        let points
+        if (area.boundaryPoints) {
+          points = JSON.parse(area.boundaryPoints)
+        } else {
+          points = this.generateBoundaryPoints(
+            parseFloat(area.longitude),
+            parseFloat(area.latitude)
+          )
+        }
+        const positions = points.map(p => Cesium.Cartesian3.fromDegrees(p[0], p[1], 0))
+        const closedPositions = [...positions, positions[0]]
+        const riskColor = this.getRiskColor(area.riskLevel)
+
+        // 创建填充多边形（用于高空视角）
         const boundary = this.viewer.entities.add({
           name: area.areaName + '边界',
           polygon: {
             hierarchy: positions,
-            material: this.getRiskColor(area.riskLevel).withAlpha(0.4),
+            material: riskColor.withAlpha(0.4),
             outline: true,
-            outlineColor: this.getRiskColor(area.riskLevel),
+            outlineColor: riskColor,
             outlineWidth: 3,
-            height: area.altitude || 0,
-            extrudedHeight: (area.altitude || 0) + 10, // 拉伸高度，形成立体边界
-            classificationType: Cesium.ClassificationType.BOTH
+            height: 0
           },
           description: `
             <div style="padding: 10px;">
@@ -366,73 +391,93 @@ export default {
             </div>
           `
         })
-        
         this.boundaries.push(boundary)
+
+        // 创建边界轮廓线（用于地面视角）
+        const boundaryLine = this.viewer.entities.add({
+          name: area.areaName + '边界线',
+          polyline: {
+            positions: closedPositions,
+            width: 4,
+            material: riskColor,
+            clampToGround: true
+          },
+          description: `
+            <div style="padding: 10px;">
+              <h3>${area.areaName}</h3>
+              <p><strong>遗产类型：</strong>${this.getHeritageTypeName(area.heritageType)}</p>
+              <p><strong>风险等级：</strong>${this.getRiskText(area.riskLevel)}</p>
+            </div>
+          `
+        })
+        boundaryLine.show = false // 默认隐藏，地面视角时显示
+        this.boundaryLines.push(boundaryLine)
       } catch (error) {
         console.error('渲染边界失败', error)
       }
     },
     
     renderEnvironment(area) {
-      // 渲染周边环境要素
+      // 渲染周边环境要素（贴合地面）
       if (!area.latitude || !area.longitude) return
-      
+
       const centerLon = parseFloat(area.longitude)
       const centerLat = parseFloat(area.latitude)
-      const altitude = parseFloat(area.altitude || 0)
-      
-      // 模拟植被区域（绿色多边形）
+
+      // 模拟植被区域（绿色多边形，贴合地面）
       const vegetationPoints = [
         [centerLon - 0.005, centerLat + 0.005],
         [centerLon - 0.003, centerLat + 0.005],
         [centerLon - 0.003, centerLat + 0.003],
         [centerLon - 0.005, centerLat + 0.003]
       ]
-      
+
       const vegetation = this.viewer.entities.add({
         name: area.areaName + '植被区',
         polygon: {
           hierarchy: Cesium.Cartesian3.fromDegreesArray(vegetationPoints.flat()),
           material: Cesium.Color.GREEN.withAlpha(0.3),
-          height: altitude
+          height: 0  // 放在椭球表面
         }
       })
       this.environmentEntities.push(vegetation)
-      
-      // 模拟水系（蓝色折线）
+
+      // 模拟水系（蓝色折线，贴合地面）
       const waterPath = [
-        Cesium.Cartesian3.fromDegrees(centerLon - 0.01, centerLat - 0.005, altitude),
-        Cesium.Cartesian3.fromDegrees(centerLon, centerLat - 0.003, altitude),
-        Cesium.Cartesian3.fromDegrees(centerLon + 0.01, centerLat - 0.005, altitude)
+        Cesium.Cartesian3.fromDegrees(centerLon - 0.01, centerLat - 0.005),
+        Cesium.Cartesian3.fromDegrees(centerLon, centerLat - 0.003),
+        Cesium.Cartesian3.fromDegrees(centerLon + 0.01, centerLat - 0.005)
       ]
-      
+
       const water = this.viewer.entities.add({
         name: area.areaName + '水系',
         polyline: {
           positions: waterPath,
           width: 5,
-          material: Cesium.Color.BLUE.withAlpha(0.7)
+          material: Cesium.Color.BLUE.withAlpha(0.7),
+          clampToGround: true
         }
       })
       this.environmentEntities.push(water)
-      
-      // 模拟道路（灰色折线）
+
+      // 模拟道路（灰色折线，贴合地面）
       const roadPath = [
-        Cesium.Cartesian3.fromDegrees(centerLon - 0.008, centerLat + 0.002, altitude),
-        Cesium.Cartesian3.fromDegrees(centerLon + 0.008, centerLat + 0.002, altitude)
+        Cesium.Cartesian3.fromDegrees(centerLon - 0.008, centerLat + 0.002),
+        Cesium.Cartesian3.fromDegrees(centerLon + 0.008, centerLat + 0.002)
       ]
-      
+
       const road = this.viewer.entities.add({
         name: area.areaName + '道路',
         polyline: {
           positions: roadPath,
           width: 3,
-          material: Cesium.Color.GRAY
+          material: Cesium.Color.GRAY,
+          clampToGround: true
         }
       })
       this.environmentEntities.push(road)
     },
-    
+
     renderAdministrative() {
       // 渲染行政区划边界（简化示例）
       // 实际应用中可以加载GeoJSON或其他矢量数据
@@ -462,20 +507,21 @@ export default {
     
     renderDevice(device, area) {
       if (!device.latitude || !device.longitude) return
-      
+
       const marker = this.viewer.entities.add({
         name: device.deviceName,
+        // 使用高度0，配合 CLAMP_TO_GROUND 让点位贴合地面
         position: Cesium.Cartesian3.fromDegrees(
           parseFloat(device.longitude),
           parseFloat(device.latitude),
-          parseFloat(device.altitude || 0) + 5 // 稍微抬高以便可见
+          0
         ),
         point: {
           pixelSize: 15,
           color: this.getRiskColor(device.riskLevel || 'safe'),
           outlineColor: Cesium.Color.WHITE,
           outlineWidth: 2,
-          heightReference: Cesium.HeightReference.RELATIVE_TO_GROUND
+          heightReference: Cesium.HeightReference.CLAMP_TO_GROUND
         },
         label: {
           text: device.deviceName,
@@ -486,7 +532,7 @@ export default {
           style: Cesium.LabelStyle.FILL_AND_OUTLINE,
           verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
           pixelOffset: new Cesium.Cartesian2(0, -20),
-          heightReference: Cesium.HeightReference.RELATIVE_TO_GROUND,
+          heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
           scaleByDistance: new Cesium.NearFarScalar(1.5e2, 1.0, 8.0e6, 0.0)
         },
         properties: {
@@ -512,9 +558,14 @@ export default {
     
     setupClickHandler() {
       if (!this.viewer) return
-      
+
       // 设置点击事件处理
       this.viewer.screenSpaceEventHandler.setInputAction((click) => {
+        // 确保清除任何实体追踪状态
+        if (this.viewer.trackedEntity) {
+          this.viewer.trackedEntity = undefined
+        }
+
         const pickedObject = this.viewer.scene.pick(click.position)
         if (Cesium.defined(pickedObject) && pickedObject.id) {
           const entity = pickedObject.id
@@ -532,6 +583,10 @@ export default {
       switch (mode) {
         case 'space':
           // 太空视角 - 高空俯瞰
+          // 恢复图层显示：显示填充多边形，隐藏边界线
+          this.boundaries.forEach(boundary => boundary.show = this.showBoundaries)
+          this.boundaryLines.forEach(line => line.show = false)
+          this.environmentEntities.forEach(entity => entity.show = this.showEnvironment)
           this.viewer.camera.flyTo({
             destination: Cesium.Cartesian3.fromDegrees(105.0, 35.0, 10000000),
             orientation: {
@@ -544,6 +599,10 @@ export default {
           break
         case 'ground':
           // 地面视角 - 低空平视
+          // 地面视角时：隐藏填充多边形，显示边界轮廓线
+          this.boundaries.forEach(boundary => boundary.show = false)
+          this.boundaryLines.forEach(line => line.show = this.showBoundaries)
+          this.environmentEntities.forEach(entity => entity.show = false)
           if (this.selectedArea) {
             const area = this.selectedArea
             this.viewer.camera.flyTo({
@@ -563,11 +622,14 @@ export default {
           break
         case 'heritage':
           // 遗产地视角 - 中等高度斜视
+          // 恢复图层显示：显示填充多边形，隐藏边界线
+          this.boundaries.forEach(boundary => boundary.show = this.showBoundaries)
+          this.boundaryLines.forEach(line => line.show = false)
+          this.environmentEntities.forEach(entity => entity.show = this.showEnvironment)
           if (this.selectedArea) {
             this.flyToArea(this.selectedArea)
-          } else if (this.areas.length > 0) {
-            this.flyToArea(this.areas[0])
           }
+          // 未选择遗产地时不自动定位
           break
       }
     },
@@ -631,7 +693,23 @@ export default {
       this.isTourPlaying = false
       this.tourMode = 'free'
     },
-    
+
+    // 根据中心经纬度自动生成矩形边界点
+    generateBoundaryPoints(centerLon, centerLat, radiusKm = 0.3) {
+      // radiusKm: 边界半径，默认0.3公里
+      // 1度纬度约等于111公里，经度随纬度变化
+      const latOffset = radiusKm / 111
+      const lonOffset = radiusKm / (111 * Math.cos(centerLat * Math.PI / 180))
+
+      // 返回矩形的四个角点（顺时针）
+      return [
+        [centerLon - lonOffset, centerLat - latOffset], // 西南
+        [centerLon + lonOffset, centerLat - latOffset], // 东南
+        [centerLon + lonOffset, centerLat + latOffset], // 东北
+        [centerLon - lonOffset, centerLat + latOffset]  // 西北
+      ]
+    },
+
     getRiskColor(riskLevel) {
       const colors = {
         safe: Cesium.Color.GREEN,
@@ -704,14 +782,20 @@ export default {
     
     toggleTerrain() {
       if (!this.viewer) return
-      
+
+      // 注意: Cesium.createWorldTerrain() 需要 Cesium Ion Token
+      // 本项目不使用 Ion Token，通过控制影像层透明度实现地形显示切换
+      const imageryLayers = this.viewer.imageryLayers
       if (this.showTerrain) {
-        this.viewer.terrainProvider = Cesium.createWorldTerrain({
-          requestWaterMask: true,
-          requestVertexNormals: true
-        })
+        // 显示地形：影像层完全不透明
+        imageryLayers.get(0).alpha = 1.0
+        this.viewer.scene.globe.depthTestAgainstTerrain = true
+        this.viewer.scene.globe.showGroundAtmosphere = true
       } else {
-        this.viewer.terrainProvider = new Cesium.EllipsoidTerrainProvider()
+        // 隐藏地形效果：影像层半透明
+        imageryLayers.get(0).alpha = 0.3
+        this.viewer.scene.globe.depthTestAgainstTerrain = false
+        this.viewer.scene.globe.showGroundAtmosphere = false
       }
     },
     
@@ -722,20 +806,95 @@ export default {
     },
     
     toggleBoundaries() {
-      this.boundaries.forEach(boundary => {
-        boundary.show = this.showBoundaries
-      })
+      if (this.viewMode === 'ground') {
+        // 地面视角：控制边界轮廓线
+        this.boundaries.forEach(boundary => boundary.show = false)
+        this.boundaryLines.forEach(line => line.show = this.showBoundaries)
+      } else {
+        // 其他视角：控制填充多边形
+        this.boundaries.forEach(boundary => boundary.show = this.showBoundaries)
+        this.boundaryLines.forEach(line => line.show = false)
+      }
     },
     
     toggleEnvironment() {
-      if (this.showEnvironment && this.environmentEntities.length === 0) {
-        // 重新渲染环境要素
-        this.areas.forEach(area => this.renderEnvironment(area))
+      if (this.showEnvironment) {
+        // 勾选时：显示周边环境，隐藏遮罩
+        if (this.environmentEntities.length === 0) {
+          this.areas.forEach(area => this.renderEnvironment(area))
+        } else {
+          this.environmentEntities.forEach(entity => {
+            entity.show = true
+          })
+        }
+        // 隐藏遮罩层
+        if (this.areaMask) {
+          this.areaMask.show = false
+        }
       } else {
+        // 不勾选时：隐藏周边环境，显示遮罩（只显示遗产地范围）
         this.environmentEntities.forEach(entity => {
-          entity.show = this.showEnvironment
+          entity.show = false
         })
+        // 渲染或显示遮罩层
+        this.renderAreaMask()
       }
+    },
+
+    renderAreaMask() {
+      if (!this.viewer || this.areas.length === 0) return
+
+      // 如果已存在遮罩，直接显示
+      if (this.areaMask) {
+        this.areaMask.show = true
+        return
+      }
+
+      // 收集所有遗产边界作为"洞"
+      const holes = []
+      this.areas.forEach(area => {
+        if (area.latitude && area.longitude) {
+          let points
+          if (area.boundaryPoints) {
+            try {
+              points = JSON.parse(area.boundaryPoints)
+            } catch (e) {
+              console.error('解析边界点失败', e)
+            }
+          }
+          // 如果没有boundaryPoints，自动生成
+          if (!points || points.length < 3) {
+            points = this.generateBoundaryPoints(
+              parseFloat(area.longitude),
+              parseFloat(area.latitude)
+            )
+          }
+          const holePositions = points.map(p => Cesium.Cartesian3.fromDegrees(p[0], p[1]))
+          holes.push(new Cesium.PolygonHierarchy(holePositions))
+        }
+      })
+
+      // 如果没有有效的边界，不创建遮罩
+      if (holes.length === 0) return
+
+      // 创建一个覆盖全球的大矩形作为外边界
+      const outerRing = Cesium.Cartesian3.fromDegreesArray([
+        -180, 85,  // 西北角
+        180, 85,   // 东北角
+        180, -85,  // 东南角
+        -180, -85, // 西南角
+      ])
+
+      this.areaMask = this.viewer.entities.add({
+        name: '遗产地范围外遮罩',
+        polygon: {
+          hierarchy: new Cesium.PolygonHierarchy(outerRing, holes),
+          material: Cesium.Color.BLACK.withAlpha(0.6),
+          // 放在椭球表面（EllipsoidTerrainProvider的地面高度）
+          height: 0,
+          outline: false
+        }
+      })
     },
     
     toggleAdministrative() {
@@ -854,6 +1013,11 @@ export default {
 
 .view-btn:hover {
   background: #1976D2;
+}
+
+.view-btn.active {
+  background: #0D47A1;
+  box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.5);
 }
 
 .tour-controls {

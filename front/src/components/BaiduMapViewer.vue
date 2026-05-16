@@ -482,12 +482,25 @@ export default {
     },
     
     renderAreaBoundary(area) {
-      if (!area.boundaryPoints) return
-      
+      // 必须有经纬度才能渲染
+      if (!area.latitude || !area.longitude) return
+
       try {
-        const points = JSON.parse(area.boundaryPoints)
+        let points
+        let center
+
+        // 如果有边界点则使用，否则根据经纬度自动生成
+        if (area.boundaryPoints) {
+          points = JSON.parse(area.boundaryPoints)
+        } else {
+          points = this.generateBoundaryPoints(
+            parseFloat(area.longitude),
+            parseFloat(area.latitude)
+          )
+        }
+
         const baiduPoints = points.map(p => new BMap.Point(p[0], p[1]))
-        
+
         const polygon = new BMap.Polygon(baiduPoints, {
           strokeColor: this.getRiskColor(area.riskLevel),
           strokeWeight: 3,
@@ -496,12 +509,17 @@ export default {
           fillColor: this.getRiskColor(area.riskLevel),
           fillOpacity: 0.25
         })
-        
+
         this.map.addOverlay(polygon)
         this.polygons.push(polygon)
-        
-        // 添加区域标签
-        const center = this.getPolygonCenter(baiduPoints)
+
+        // 添加区域标签（使用中心点或多边形中心）
+        if (area.longitude && area.latitude) {
+          center = new BMap.Point(parseFloat(area.longitude), parseFloat(area.latitude))
+        } else {
+          center = this.getPolygonCenter(baiduPoints)
+        }
+
         const label = new BMap.Label(area.areaName, {
           position: center,
           offset: new BMap.Size(0, 0)
@@ -518,7 +536,7 @@ export default {
         })
         this.map.addOverlay(label)
         this.labels.push(label)
-        
+
         // 添加点击事件
         polygon.addEventListener('click', () => {
           this.showAreaInfo(area)
@@ -526,6 +544,22 @@ export default {
       } catch (error) {
         console.error('渲染区域边界失败', error)
       }
+    },
+
+    // 根据中心经纬度自动生成矩形边界点
+    generateBoundaryPoints(centerLon, centerLat, radiusKm = 0.3) {
+      // radiusKm: 边界半径，默认0.3公里
+      // 1度纬度约等于111公里，经度随纬度变化
+      const latOffset = radiusKm / 111
+      const lonOffset = radiusKm / (111 * Math.cos(centerLat * Math.PI / 180))
+
+      // 返回矩形的四个角点（顺时针）
+      return [
+        [centerLon - lonOffset, centerLat - latOffset], // 西南
+        [centerLon + lonOffset, centerLat - latOffset], // 东南
+        [centerLon + lonOffset, centerLat + latOffset], // 东北
+        [centerLon - lonOffset, centerLat + latOffset]  // 西北
+      ]
     },
     
     renderDeviceMarker(device, area) {
