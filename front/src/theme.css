@@ -1,0 +1,74 @@
+/* 
+ * 文化遗产环境监测系统 - 主题配色
+ * Cultural Heritage Environmental Monitoring System Theme
+ */
+
+:root {
+  /* ========== 主色（Primary） ========== */
+  --primary-color: #1F4E5F;           /* 敦煌青 / 深青绿色 */
+  --primary-light: #2A6577;           /* 主色浅色 */
+  --primary-dark: #163A47;            /* 主色深色 */
+  --primary-hover: #2A6577;           /* 主色悬停 */
+  
+  /* ========== 辅助色（Secondary） ========== */
+  --secondary-color: #C8A96B;         /* 文物金 / 古铜金 */
+  --secondary-light: #D4B87F;         /* 辅助色浅色 */
+  --secondary-dark: #B39555;          /* 辅助色深色 */
+  --secondary-hover: #D4B87F;         /* 辅助色悬停 */
+  
+  /* ========== 页面基础颜色 ========== */
+  --page-bg: #F4F7F9;                 /* 页面背景色 */
+  --card-bg: #FFFFFF;                 /* 卡片背景色 */
+  --border-color: #E5E7EB;            /* 边框颜色 */
+  
+  /* ========== 文字颜色 ========== */
+  --text-primary: #1E293B;            /* 一级标题 */
+  --text-body: #475569;               /* 正文文字 */
+  --text-secondary: #94A3B8;          /* 辅助文字 */
+  --text-white: #FFFFFF;              /* 白色文字 */
+  
+  /* ========== 功能状态色 ========== */
+  --success-color: #3BA272;           /* 成功色（正常） */
+  --warning-color: #F7B955;           /* 警告色（预警） */
+  --danger-color: #D9534F;            /* 危险色（报警） */
+  --info-color: #409EFF;              /* 信息色 */
+  
+  /* ========== 深色大屏模式（可选） ========== */
+  --dark-bg: #0F172A;                 /* 大屏背景色 */
+  --dark-card-bg: #111827;            /* 深色卡片背景 */
+  --tech-blue: #38BDF8;               /* 科技蓝高亮色 */
+  
+  /* ========== 渐变色 ========== */
+  --gradient-primary: linear-gradient(135deg, #1F4E5F 0%, #2A6577 100%);
+  --gradient-secondary: linear-gradient(135deg, #C8A96B 0%, #D4B87F 100%);
+  --gradient-heritage: linear-gradient(135deg, #1F4E5F 0%, #C8A96B 100%);
+  
+  /* ========== 阴影 ========== */
+  --shadow-sm: 0 2px 4px rgba(31, 78, 95, 0.08);
+  --shadow-md: 0 4px 12px rgba(31, 78, 95, 0.12);
+  --shadow-lg: 0 8px 24px rgba(31, 78, 95, 0.16);
+  --shadow-xl: 0 12px 32px rgba(31, 78, 95, 0.20);
+  
+  /* ========== 圆角 ========== */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  
+  /* ========== 间距 ========== */
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 32px;
+}
+
+/* ========== Echarts 图表推荐色板 ========== */
+.echarts-color-palette {
+  --chart-color-1: #1F4E5F;
+  --chart-color-2: #C8A96B;
+  --chart-color-3: #3BA272;
+  --chart-color-4: #409EFF;
+  --chart-color-5: #F7B955;
+  --chart-color-6: #D9534F;
+}

@@ -1,0 +1,10 @@
+// vite.config.js
+import { defineConfig } from "file:///D:/2026%E6%AF%95%E8%AE%BE/%E9%80%9A%E7%94%A8%E9%A1%B9%E7%9B%AE%E6%A1%86%E6%9E%B6/front/node_modules/vite/dist/node/index.js";
+import vue from "file:///D:/2026%E6%AF%95%E8%AE%BE/%E9%80%9A%E7%94%A8%E9%A1%B9%E7%9B%AE%E6%A1%86%E6%9E%B6/front/node_modules/@vitejs/plugin-vue/dist/index.mjs";
+var vite_config_default = defineConfig({
+  plugins: [vue()]
+});
+export {
+  vite_config_default as default
+};
+//# sourceMappingURL=data:application/json;base64,ewogICJ2ZXJzaW9uIjogMywKICAic291cmNlcyI6IFsidml0ZS5jb25maWcuanMiXSwKICAic291cmNlc0NvbnRlbnQiOiBbImNvbnN0IF9fdml0ZV9pbmplY3RlZF9vcmlnaW5hbF9kaXJuYW1lID0gXCJEOlxcXFwyMDI2XHU2QkQ1XHU4QkJFXFxcXFx1OTAxQVx1NzUyOFx1OTg3OVx1NzZFRVx1Njg0Nlx1NjdCNlxcXFxmcm9udFwiO2NvbnN0IF9fdml0ZV9pbmplY3RlZF9vcmlnaW5hbF9maWxlbmFtZSA9IFwiRDpcXFxcMjAyNlx1NkJENVx1OEJCRVxcXFxcdTkwMUFcdTc1MjhcdTk4NzlcdTc2RUVcdTY4NDZcdTY3QjZcXFxcZnJvbnRcXFxcdml0ZS5jb25maWcuanNcIjtjb25zdCBfX3ZpdGVfaW5qZWN0ZWRfb3JpZ2luYWxfaW1wb3J0X21ldGFfdXJsID0gXCJmaWxlOi8vL0Q6LzIwMjYlRTYlQUYlOTUlRTglQUUlQkUvJUU5JTgwJTlBJUU3JTk0JUE4JUU5JUExJUI5JUU3JTlCJUFFJUU2JUExJTg2JUU2JTlFJUI2L2Zyb250L3ZpdGUuY29uZmlnLmpzXCI7aW1wb3J0IHsgZGVmaW5lQ29uZmlnIH0gZnJvbSAndml0ZSdcbmltcG9ydCB2dWUgZnJvbSAnQHZpdGVqcy9wbHVnaW4tdnVlJ1xuXG4vLyBodHRwczovL3ZpdGUuZGV2L2NvbmZpZy9cbmV4cG9ydCBkZWZhdWx0IGRlZmluZUNvbmZpZyh7XG4gIHBsdWdpbnM6IFt2dWUoKV0sXG59KSJdLAogICJtYXBwaW5ncyI6ICI7QUFBNFQsU0FBUyxvQkFBb0I7QUFDelYsT0FBTyxTQUFTO0FBR2hCLElBQU8sc0JBQVEsYUFBYTtBQUFBLEVBQzFCLFNBQVMsQ0FBQyxJQUFJLENBQUM7QUFDakIsQ0FBQzsiLAogICJuYW1lcyI6IFtdCn0K
