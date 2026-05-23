@@ -66,3 +66,13 @@ export function getUploadConfig() {
     method: 'get'
   })
 }
+
+// 获取文件预览URL
+export function getFilePreviewUrl(id) {
+  return `/file/preview/${id}`
+}
+
+// 获取文件下载URL
+export function getFileDownloadUrl(id) {
+  return `/file/download/${id}`
+}

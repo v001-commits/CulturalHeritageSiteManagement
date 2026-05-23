@@ -22,7 +22,7 @@ public class WebMvcConfig implements WebMvcConfigurer {
         // JWT认证拦截器
         registry.addInterceptor(jwtInterceptor)
                 .addPathPatterns("/**")
-                .excludePathPatterns("/auth/**", "/captcha/**", "/file/**", "/statistics/**");
+                .excludePathPatterns("/auth/**", "/captcha/**", "/files/**", "/statistics/**", "/file/public/**");
         
         // 权限拦截器 - 检查区域访问权限（仅对非管理员）
         registry.addInterceptor(permissionInterceptor)

@@ -27,7 +27,8 @@ public class AlertController {
      */
     @GetMapping("/records")
     public Result<List<AlertRecord>> getRecords(@RequestParam(required = false) String status,
-                                                  HttpServletRequest request) {
+                                                @RequestParam(required = false) Long areaId,
+                                                HttpServletRequest request) {
         // 获取当前用户信息
         String token = extractToken(request);
         Long userId = JwtUtil.getUserId(token);
@@ -38,15 +39,24 @@ public class AlertController {
             wrapper.eq(AlertRecord::getStatus, status);
         }
 
-        // 过滤用户有权限的区域
-        List<Long> areaIds = PermissionUtil.getUserAreaIds(userId, role);
-        if (areaIds != null && !areaIds.isEmpty()) {
-            wrapper.in(AlertRecord::getAreaId, areaIds);
-        } else if (areaIds != null) {
-            // 空列表表示没有任何权限
-            return Result.success(new ArrayList<>());
+        // 如果指定了区域ID，按指定区域过滤
+        if (areaId != null) {
+            // 检查用户是否有该区域的权限
+            if (!PermissionUtil.hasAreaPermission(userId, areaId, role)) {
+                return Result.success(new ArrayList<>());
+            }
+            wrapper.eq(AlertRecord::getAreaId, areaId);
+        } else {
+            // 过滤用户有权限的区域
+            List<Long> areaIds = PermissionUtil.getUserAreaIds(userId, role);
+            if (areaIds != null && !areaIds.isEmpty()) {
+                wrapper.in(AlertRecord::getAreaId, areaIds);
+            } else if (areaIds != null) {
+                // 空列表表示没有任何权限
+                return Result.success(new ArrayList<>());
+            }
+            // null表示管理员，不限制
         }
-        // null表示管理员，不限制
 
         wrapper.orderByDesc(AlertRecord::getCreateTime);
         return Result.success(alertRecordService.list(wrapper));

@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="home-container">
     <!-- 顶部导航栏 -->
     <header class="header">
@@ -501,7 +501,7 @@
               <div v-if="filteredDeviceList.length === 0" class="empty-state">
                 <div class="empty-icon">📟</div>
                 <p>{{ deviceList.length === 0 ? '暂无设备数据' : '没有找到匹配的设备' }}</p>
-                <button v-if="deviceList.length > 0" class="reset-btn" @click="resetDeviceFilters">重置筛���</button>
+                <button v-if="deviceList.length > 0" class="reset-btn" @click="resetDeviceFilters">重置筛选</button>
               </div>
             </section>
 
@@ -524,7 +524,7 @@
                       </div>
                       <div class="form-item">
                         <label>设备名称 *</label>
-                        <input v-model="deviceForm.deviceName" required placeholder="请输入设���名称" />
+                        <input v-model="deviceForm.deviceName" required placeholder="请输入设备名称" />
                       </div>
                     </div>
                     <div class="form-row">
@@ -803,12 +803,13 @@
                   <h4>导入说明</h4>
                   <p>1. 支持Excel(.xlsx, .xls)和CSV(.csv)格式文件</p>
                   <p>2. 文件首行必须为列名，支持的列包括：区域编码、温度、湿度、降水量、风速、风向、光照强度、PM2.5、SO₂、NO₂、土壤墒情、土壤pH、水质等级、裂缝宽度、风化程度、记录时间</p>
-                  <p>3. 区域编码必填，其他字段选填</p>
+                  <p>3. 区域编码必填，其他字段选填。记录时间格式：yyyy-MM-dd HH:mm:ss</p>
+                  <p>4. 示例文件位于 docs 目录：批量导入数据样例.csv 和 批量导入数据样例.xlsx</p>
                 </div>
                 <div class="import-upload">
                   <input type="file" ref="importFile" @change="handleImportFile" accept=".xlsx,.xls,.csv">
-                  <button @click="$refs.importFile.click()" class="upload-btn">选择文件</button>
-                  <span v-if="importFileName">{{ importFileName }}</span>
+                  <button @click="importFile && importFile.click()" class="upload-btn">选择文件</button>
+                  <span v-if="importFileName" class="selected-file">{{ importFileName }}</span>
                   <button v-if="importFileName" @click="uploadImportFile" class="confirm-btn">开始导入</button>
                 </div>
               </div>
@@ -1197,65 +1198,138 @@
             <section class="statistics-section">
               <div class="stats-filter">
                 <select v-model="statsAreaId" @change="loadStatistics">
+                  <option value="">请选择遗产地</option>
                   <option v-for="area in authorizedAreaList" :key="area.id" :value="area.id">{{ area.areaName }}</option>
                 </select>
-                <select v-model="statsPeriod" @change="loadStatistics">
+                <select v-model="statsPeriod" @change="loadStatistics" :disabled="!statsAreaId">
                   <option value="month">月度</option>
                   <option value="quarter">季度</option>
                   <option value="year">年度</option>
                 </select>
               </div>
 
-              <!-- 环境因子趋势图 -->
-              <div class="chart-card">
-                <h3>环境因子变化趋势</h3>
-                <div id="factor-trend-chart" style="width: 100%; height: 400px;"></div>
+              <!-- 未选择地点时的提示 -->
+              <div v-if="!statsAreaId" class="no-selection-hint">
+                <div class="hint-icon">📍</div>
+                <p class="hint-text">请先选择一个遗产地进行查询</p>
+                <p class="hint-subtext">选择遗产地后，将显示该区域的统计分析数据</p>
               </div>
 
-              <!-- 预警次数统计 -->
-              <div class="chart-card">
-                <h3>风险预警次数分布</h3>
-                <div id="alert-stats-chart" style="width: 100%; height: 350px;"></div>
-              </div>
+              <!-- 已选择地点时显示图表 -->
+              <div v-else>
+                <!-- 环境因子趋势图 -->
+                <div class="chart-card">
+                  <h3>环境因子变化趋势</h3>
+                  <div id="factor-trend-chart" style="width: 100%; height: 400px;"></div>
+                </div>
 
-              <!-- 区域对比 -->
-              <div class="chart-card">
-                <h3>不同区域监测数据对比</h3>
-                <div id="area-compare-chart" style="width: 100%; height: 400px;"></div>
+                <!-- 预警次数统计 -->
+                <div class="chart-card">
+                  <h3>风险预警次数分布</h3>
+                  <div id="alert-stats-chart" style="width: 100%; height: 350px;"></div>
+                </div>
+
+                <!-- 区域对比 -->
+                <div class="chart-card">
+                  <h3>不同区域监测数据对比</h3>
+                  <div class="area-compare-filter">
+                    <div class="compare-row">
+                      <div class="multi-select-wrapper">
+                        <div class="multi-select-trigger" @click="showAreaCompareSelect = !showAreaCompareSelect">
+                          <span v-if="compareAreaIds.length === 0" class="placeholder">请选择对比区域</span>
+                          <span v-else class="selected-text">
+                            已选择 {{ compareAreaIds.length }} 个区域：{{ getSelectedAreaNames() }}
+                          </span>
+                          <span class="arrow" :class="{ 'arrow-up': showAreaCompareSelect }">▼</span>
+                        </div>
+                        <div v-show="showAreaCompareSelect" class="multi-select-dropdown">
+                          <div
+                            v-for="area in authorizedAreaList"
+                            :key="area.id"
+                            class="multi-select-option"
+                            :class="{ 'selected': compareAreaIds.includes(area.id) }"
+                            @click.stop="toggleCompareArea(area.id)"
+                          >
+                            <span class="checkbox" :class="{ 'checked': compareAreaIds.includes(area.id) }">✓</span>
+                            <span>{{ area.areaName }}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <select v-model="compareTimeType" class="compare-time-type">
+                        <option value="period">按周期平均</option>
+                        <option value="date">按日期范围</option>
+                      </select>
+                    </div>
+                    <div class="compare-row">
+                      <div v-if="compareTimeType === 'period'" class="compare-period-wrapper">
+                        <select v-model="comparePeriod" class="compare-period-select">
+                          <option value="month">月度平均</option>
+                          <option value="quarter">季度平均</option>
+                          <option value="year">年度平均</option>
+                        </select>
+                      </div>
+                      <div v-else class="compare-date-wrapper">
+                        <input type="date" v-model="compareStartDate" class="compare-date-input" placeholder="开始日期">
+                        <span class="date-separator">至</span>
+                        <input type="date" v-model="compareEndDate" class="compare-date-input" placeholder="结束日期">
+                      </div>
+                      <button class="compare-btn" @click="loadAreaCompareData" :disabled="compareAreaIds.length === 0">开始对比</button>
+                    </div>
+                  </div>
+                  <div id="area-compare-chart" style="width: 100%; height: 400px;"></div>
+                </div>
               </div>
 
               <!-- 报告生成 -->
-              <div class="report-section">
+              <div class="report-section" :class="{ 'section-disabled': !statsAreaId }">
                 <h3>监测报告生成</h3>
                 <div class="report-form">
-                  <select v-model="reportType">
+                  <select v-model="reportType" :disabled="!statsAreaId">
                     <option value="month">月度报告</option>
                     <option value="year">年度报告</option>
                   </select>
-                  <select v-model="reportFormat">
+                  <select v-model="reportFormat" :disabled="!statsAreaId">
                     <option value="pdf">PDF格式</option>
                     <option value="excel">Excel格式</option>
                   </select>
-                  <button class="export-btn" @click="generateReport">生成报告</button>
+                  <button class="export-btn" :class="{ 'btn-disabled': !statsAreaId }" :disabled="!statsAreaId" @click="generateReport">生成报告</button>
                 </div>
               </div>
 
               <!-- 历史数据查询 -->
-              <div class="history-section">
+              <div class="history-section" :class="{ 'section-disabled': !statsAreaId }">
                 <h3>历史数据追溯与查询</h3>
                 <div class="history-filter">
-                  <input type="date" v-model="historyStartDate" placeholder="开始日期">
-                  <input type="date" v-model="historyEndDate" placeholder="结束日期">
-                  <select v-model="historyAreaId">
+                  <input
+                    type="date"
+                    v-model="historyStartDate"
+                    placeholder="开始日期"
+                    :disabled="!statsAreaId"
+                    :max="maxHistoryDate"
+                    :min="minHistoryStartDate"
+                    @change="validateHistoryDates"
+                  >
+                  <span class="date-separator">至</span>
+                  <input
+                    type="date"
+                    v-model="historyEndDate"
+                    placeholder="结束日期"
+                    :disabled="!statsAreaId"
+                    :max="maxHistoryDate"
+                    :min="minHistoryEndDate"
+                    @change="validateHistoryDates"
+                  >
+                  <select v-model="historyAreaId" :disabled="!statsAreaId">
+                    <option value="">请选择地点</option>
                     <option v-for="area in authorizedAreaList" :key="area.id" :value="area.id">{{ area.areaName }}</option>
                   </select>
-                  <select v-model="historyFactorType">
+                  <select v-model="historyFactorType" :disabled="!statsAreaId">
                     <option value="">全部因子</option>
                     <option value="temperature">温度</option>
                     <option value="humidity">湿度</option>
                     <option value="pm25">PM2.5</option>
                   </select>
-                  <button class="search-btn" @click="searchHistory">查询</button>
+                  <button class="search-btn" :class="{ 'btn-disabled': !statsAreaId }" :disabled="!statsAreaId" @click="searchHistory">查询</button>
                 </div>
                 <div class="chart-card">
                   <div id="history-chart" style="width: 100%; height: 350px;"></div>
@@ -1546,13 +1620,17 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeMount, onUnmounted, watch, nextTick } from 'vue'
+import { ref, onMounted, onBeforeMount, onUnmounted, watch, nextTick, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { getUserList, addUser, updateUser, deleteUser } from '../api/user'
-import { getFileList, getFileListByUserId, deleteFile } from '../api/file'
+import { getFileList, getFileListByUserId, deleteFile, getFilePreviewUrl, getFileDownloadUrl } from '../api/file'
 import { getUserAuthorizedAreas } from '../api/area'
 import { getDeviceList, addDevice, updateDevice, deleteDevice, uploadDevicePhoto } from '../api/device'
 import request from '../api/request'
+
+// Office 文档渲染库
+import mammoth from 'mammoth'
+import * as XLSX from 'xlsx'
 import FileUpload from '../components/FileUpload.vue'
 import BaiduMapViewer from '../components/BaiduMapViewer.vue'
 import CesiumViewer from '../components/CesiumViewer.vue'
@@ -1615,6 +1693,7 @@ const sensorDataList = ref([])
 const filterAreaId = ref('')
 const filterSource = ref('')
 const importFileName = ref('')
+const importFile = ref(null)
 
 // 各菜单允许访问的角色
 const menuRoles = {
@@ -1795,6 +1874,77 @@ const historyEndDate = ref('')
 const historyAreaId = ref('')
 const historyFactorType = ref('')
 let historyChart = null
+
+// 历史数据日期限制
+const maxHistoryDate = computed(() => {
+  // 不能超过当前日期
+  return new Date().toISOString().split('T')[0]
+})
+
+const minHistoryStartDate = computed(() => {
+  // 最小日期可以设为一年前
+  const date = new Date()
+  date.setFullYear(date.getFullYear() - 1)
+  return date.toISOString().split('T')[0]
+})
+
+const minHistoryEndDate = computed(() => {
+  // 结束日期最小为开始日期
+  return historyStartDate.value || minHistoryStartDate.value
+})
+
+// 验证历史数据日期
+const validateHistoryDates = () => {
+  if (!historyStartDate.value || !historyEndDate.value) {
+    return true
+  }
+
+  const start = new Date(historyStartDate.value)
+  const end = new Date(historyEndDate.value)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+
+  // 检查结束日期是否早于开始日期
+  if (end < start) {
+    notification.error('结束时间不能早于起始时间')
+    historyEndDate.value = historyStartDate.value
+    return false
+  }
+
+  // 检查日期是否超过当前日期
+  if (start > today || end > today) {
+    notification.error('查询日期不能超过当前系统日期')
+    if (start > today) {
+      historyStartDate.value = maxHistoryDate.value
+    }
+    if (end > today) {
+      historyEndDate.value = maxHistoryDate.value
+    }
+    return false
+  }
+
+  // 检查日期范围是否超过30天
+  const diffDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24))
+  if (diffDays > 30) {
+    notification.error('查询时间范围不能超过30天')
+    // 自动调整结束日期为开始日期后30天
+    const newEnd = new Date(start)
+    newEnd.setDate(newEnd.getDate() + 30)
+    const maxEnd = new Date(maxHistoryDate.value)
+    historyEndDate.value = newEnd > maxEnd ? maxHistoryDate.value : newEnd.toISOString().split('T')[0]
+    return false
+  }
+
+  return true
+}
+
+// 区域对比多选相关变量
+const compareAreaIds = ref([])
+const showAreaCompareSelect = ref(false)
+const compareTimeType = ref('period')
+const comparePeriod = ref('month')
+const compareStartDate = ref('')
+const compareEndDate = ref('')
 
 // 删除确认对话框相关变量
 const showDeleteDialog = ref(false)
@@ -2498,27 +2648,244 @@ const fetchFileListByUserId = async (userId) => {
   }
 }
 
+// 获取文件的 MIME type
+const getMimeType = (fileType) => {
+  const mimeTypes = {
+    'jpg': 'image/jpeg',
+    'jpeg': 'image/jpeg',
+    'png': 'image/png',
+    'gif': 'image/gif',
+    'bmp': 'image/bmp',
+    'webp': 'image/webp',
+    'pdf': 'application/pdf',
+    'txt': 'text/plain',
+    'csv': 'text/csv',
+    'doc': 'application/msword',
+    'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'xls': 'application/vnd.ms-excel',
+    'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'ppt': 'application/vnd.ms-powerpoint',
+    'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    'mp4': 'video/mp4',
+    'avi': 'video/x-msvideo',
+    'mov': 'video/quicktime',
+    'wmv': 'video/x-ms-wmv',
+    'mp3': 'audio/mpeg',
+    'wav': 'audio/wav',
+    'zip': 'application/zip',
+    'rar': 'application/x-rar-compressed'
+  }
+  return mimeTypes[fileType?.toLowerCase()] || 'application/octet-stream'
+}
+
+// 渲染 Word 文档
+const renderWordDocument = async (arrayBuffer) => {
+  try {
+    const result = await mammoth.convertToHtml({ arrayBuffer: arrayBuffer })
+    return result.value || '<p style="color: #999;">文档内容为空</p>'
+  } catch (error) {
+    console.error('Word文档渲染失败:', error)
+    throw new Error('Word文档解析失败')
+  }
+}
+
+// 渲染 Excel 文档
+const renderExcelDocument = (arrayBuffer) => {
+  try {
+    const workbook = XLSX.read(arrayBuffer, { type: 'array' })
+    let html = ''
+
+    workbook.SheetNames.forEach((sheetName, index) => {
+      if (workbook.SheetNames.length > 1) {
+        html += `<h3 style="margin: ${index > 0 ? '30px' : '0'} 0 15px 0; color: #333;">${sheetName}</h3>`
+      }
+      const sheet = workbook.Sheets[sheetName]
+      const htmlTable = XLSX.utils.sheet_to_html(sheet, { editable: false })
+      html += htmlTable.replace(/<table[^>]*>/, '<table>')
+    })
+
+    return html || '<p style="color: #999;">文档内容为空</p>'
+  } catch (error) {
+    console.error('Excel文档渲染失败:', error)
+    throw new Error('Excel文档解析失败')
+  }
+}
+
+// 处理 Office 文档预览
+const handleOfficePreview = async (file) => {
+  try {
+    const fileType = file.fileType?.toLowerCase()
+    notification.info('正在加载Office文档预览...')
+
+    const previewUrl = getFilePreviewUrl(file.id)
+    const response = await request({
+      url: previewUrl,
+      method: 'get',
+      responseType: 'arraybuffer'
+    })
+
+    if (!response || response.byteLength === 0) {
+      throw new Error('获取文件内容失败')
+    }
+
+    let htmlContent = ''
+
+    if (fileType === 'doc' || fileType === 'docx') {
+      htmlContent = await renderWordDocument(response)
+    } else if (fileType === 'xls' || fileType === 'xlsx') {
+      htmlContent = renderExcelDocument(response)
+    } else if (fileType === 'ppt' || fileType === 'pptx') {
+      notification.warning('PPT文档暂不支持在线预览，请下载后查看')
+      return
+    }
+
+    const previewWindow = window.open('', '_blank')
+    if (!previewWindow) {
+      notification.warning('预览窗口被拦截，请允许弹窗')
+      return
+    }
+
+    previewWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>${file.originalName} - 预览</title>
+        <style>
+          * { box-sizing: border-box; margin: 0; padding: 0; }
+          body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; padding: 20px; }
+          .header { background: #fff; padding: 15px 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+          .header h1 { font-size: 18px; color: #333; }
+          .content { background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); min-height: 400px; overflow-x: auto; }
+          table { border-collapse: collapse; width: 100%; }
+          th, td { border: 1px solid #ddd; padding: 8px 12px; text-align: left; }
+          th { background: #f0f0f0; font-weight: 600; }
+          tr:nth-child(even) { background: #fafafa; }
+          tr:hover { background: #f5f5f5; }
+          img { max-width: 100%; height: auto; }
+        </style>
+      </head>
+      <body>
+        <div class="header"><h1>📄 ${file.originalName}</h1></div>
+        <div class="content">${htmlContent}</div>
+      </body>
+      </html>
+    `)
+    previewWindow.document.close()
+    notification.success('文档预览成功')
+  } catch (error) {
+    console.error('Office文档预览失败:', error)
+    notification.error('Office文档预览失败: ' + (error.message || '未知错误'))
+  }
+}
+
 // 处理文件预览
 const handlePreview = async (file) => {
   try {
+    const fileType = file.fileType?.toLowerCase()
+
+    // Office 文档类型使用前端渲染
+    const officePreviewTypes = ['doc', 'docx', 'xls', 'xlsx']
+    if (officePreviewTypes.includes(fileType)) {
+      await handleOfficePreview(file)
+      return
+    }
+
+    // PPT 暂不支持预览
+    if (['ppt', 'pptx'].includes(fileType)) {
+      notification.warning('PPT文档暂不支持在线预览，请下载后查看')
+      return
+    }
+
+    // 浏览器原生支持预览的类型
+    const browserPreviewTypes = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'pdf', 'txt', 'csv', 'mp4', 'mp3', 'wav', 'avi', 'mov']
+    if (!browserPreviewTypes.includes(fileType)) {
+      notification.warning('该文件类型无法在浏览器中直接预览，建议下载后查看')
+      return
+    }
+
     notification.info('正在加载预览文件...')
-    
-    // 使用axios发送带token的请求获取文件流
+
+    const previewUrl = getFilePreviewUrl(file.id)
     const response = await request({
-      url: file.fileUrl,
+      url: previewUrl,
       method: 'get',
-      responseType: 'blob',
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
-      }
+      responseType: 'blob'
     })
-    
-    // 创建blob URL
-    const blobUrl = URL.createObjectURL(response)
-    
-    // 在新标签页中打开预览
-    window.open(blobUrl, '_blank')
-    
+
+    if (!response || response.size === 0) {
+      throw new Error('获取文件内容失败')
+    }
+
+    const mimeType = getMimeType(file.fileType)
+    const blob = new Blob([response], { type: mimeType })
+    const blobUrl = URL.createObjectURL(blob)
+
+    // 文本类型直接显示内容
+    if (['txt', 'csv'].includes(fileType)) {
+      const previewWindow = window.open('', '_blank')
+      if (previewWindow) {
+        const reader = new FileReader()
+        reader.onload = (e) => {
+          previewWindow.document.write(`
+            <!DOCTYPE html>
+            <html>
+            <head><meta charset="UTF-8"><title>${file.originalName}</title></head>
+            <body style="font-family: monospace; padding: 20px; white-space: pre-wrap;">${e.target.result}</body>
+            </html>
+          `)
+          previewWindow.document.close()
+        }
+        reader.readAsText(blob)
+        notification.success('文件预览成功')
+      } else {
+        notification.warning('预览窗口被拦截，请允许弹窗')
+      }
+      return
+    }
+
+    const previewWindow = window.open('', '_blank')
+    if (!previewWindow) {
+      notification.warning('预览窗口被拦截，请允许弹窗')
+      return
+    }
+
+    // 根据文件类型生成预览
+    if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'].includes(fileType)) {
+      previewWindow.document.write(`
+        <!DOCTYPE html>
+        <html><head><meta charset="UTF-8"><title>${file.originalName}</title></head>
+        <body style="margin:0;display:flex;justify-content:center;align-items:center;min-height:100vh;background:#f0f0f0;">
+          <img src="${blobUrl}" style="max-width:100%;max-height:100vh;object-fit:contain;">
+        </body></html>
+      `)
+    } else if (fileType === 'pdf') {
+      previewWindow.document.write(`
+        <!DOCTYPE html>
+        <html><head><meta charset="UTF-8"><title>${file.originalName}</title></head>
+        <body style="margin:0;"><iframe src="${blobUrl}" style="width:100vw;height:100vh;border:none;"></iframe></body></html>
+      `)
+    } else if (['mp4', 'avi', 'mov'].includes(fileType)) {
+      previewWindow.document.write(`
+        <!DOCTYPE html>
+        <html><head><meta charset="UTF-8"><title>${file.originalName}</title></head>
+        <body style="margin:0;display:flex;justify-content:center;align-items:center;min-height:100vh;background:#000;">
+          <video controls autoplay style="max-width:100%;max-height:100vh;"><source src="${blobUrl}" type="${mimeType}"></video>
+        </body></html>
+      `)
+    } else if (['mp3', 'wav'].includes(fileType)) {
+      previewWindow.document.write(`
+        <!DOCTYPE html>
+        <html><head><meta charset="UTF-8"><title>${file.originalName}</title></head>
+        <body style="margin:0;display:flex;justify-content:center;align-items:center;min-height:100vh;background:#f5f5f5;">
+          <div style="text-align:center;"><h2 style="color:#333;margin-bottom:20px;">🎵 ${file.originalName}</h2>
+          <audio controls autoplay style="width:300px;"><source src="${blobUrl}" type="${mimeType}"></audio></div>
+        </body></html>
+      `)
+    }
+
+    previewWindow.document.close()
     notification.success('文件预览成功')
   } catch (error) {
     console.error('文件预览失败:', error)
@@ -2527,14 +2894,38 @@ const handlePreview = async (file) => {
 }
 
 // 处理文件下载
-const handleDownload = (file) => {
+const handleDownload = async (file) => {
   try {
-    // 这里应该调用真实的下载API
-    console.log('下载文件:', file.name)
-    notification.success('开始下载文件')
+    notification.info('正在下载文件...')
+
+    const downloadUrl = getFileDownloadUrl(file.id)
+    const response = await request({
+      url: downloadUrl,
+      method: 'get',
+      responseType: 'blob'
+    })
+
+    if (!response || response.size === 0) {
+      throw new Error('获取文件内容失败')
+    }
+
+    const blob = new Blob([response], { type: getMimeType(file.fileType) })
+    const blobUrl = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = blobUrl
+    link.download = file.originalName
+    link.style.display = 'none'
+    document.body.appendChild(link)
+    link.click()
+
+    setTimeout(() => {
+      document.body.removeChild(link)
+      URL.revokeObjectURL(blobUrl)
+      notification.success('文件下载完成')
+    }, 1000)
   } catch (error) {
-    console.error('下载文件失败:', error)
-    notification.error('下载文件失败')
+    console.error('文件下载失败:', error)
+    notification.error('文件下载失败: ' + (error.message || '未知错误'))
   }
 }
 
@@ -2675,17 +3066,36 @@ const handleImportFile = (event) => {
 }
 
 const uploadImportFile = async () => {
-  const file = document.querySelector('input[type="file"]').files[0]
-  if (!file) return
+  const fileInput = importFile.value
+  const file = fileInput && fileInput.files ? fileInput.files[0] : null
+  if (!file) {
+    notification.error('请选择文件')
+    return
+  }
   const formData = new FormData()
   formData.append('file', file)
   try {
-    await request.post('/sensor/import', formData)
-    notification.success('导入成功')
-    importFileName.value = ''
-    fetchSensorData()
+    notification.info('正在导入数据，请稍候...')
+    // 导入可能需要较长时间，设置30秒超时
+    const response = await request.post('/sensor/import', formData, {
+      timeout: 30000,
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    })
+    // request.js 已处理响应，response 直接是 { code, msg, data }
+    if (response && response.code === 200) {
+      const result = response.data
+      notification.success(`导入成功，共导入 ${result.total} 条数据`)
+      importFileName.value = ''
+      if (fileInput) fileInput.value = '' // 清空文件选择
+      fetchSensorData()
+    } else {
+      notification.error(response?.msg || '导入失败')
+    }
   } catch (error) {
-    notification.error('导入失败')
+    console.error('导入错误:', error)
+    notification.error(error.message || '导入失败')
   }
 }
 
@@ -2945,17 +3355,19 @@ const closeAddAlertDialog = () => {
 
 // 统计分析相关方法
 const loadStatistics = async () => {
-  const areaId = statsAreaId.value || 1
+  // 未选择地点时不加载数据
+  if (!statsAreaId.value) {
+    return
+  }
+  const areaId = statsAreaId.value
   try {
-    const [trendRes, alertRes, compareRes] = await Promise.all([
+    const [trendRes, alertRes] = await Promise.all([
       request.get(`/statistics/trend?areaId=${areaId}&period=${statsPeriod.value}`),
-      request.get(`/statistics/alert?areaId=${areaId}`),
-      request.get('/statistics/compare')
+      request.get(`/statistics/alert?areaId=${areaId}`)
     ])
     await nextTick()
     if (trendRes.data) renderFactorTrendChart(trendRes.data)
     if (alertRes.data) renderAlertStatsChart(alertRes.data)
-    if (compareRes.data) renderAreaCompareChart(compareRes.data)
   } catch (error) {
     notification.error('加载统计数据失败')
   }
@@ -2998,6 +3410,79 @@ const renderAlertStatsChart = (data) => {
   alertStatsChart.setOption(option)
 }
 
+// 区域对比多选相关方法
+const toggleCompareArea = (areaId) => {
+  const index = compareAreaIds.value.indexOf(areaId)
+  if (index === -1) {
+    compareAreaIds.value.push(areaId)
+  } else {
+    compareAreaIds.value.splice(index, 1)
+  }
+}
+
+const getSelectedAreaNames = () => {
+  return compareAreaIds.value.map(id => {
+    const area = authorizedAreaList.value.find(a => a.id === id)
+    return area ? area.areaName : ''
+  }).filter(name => name).join('、')
+}
+
+const loadAreaCompareData = async () => {
+  if (compareAreaIds.value.length === 0) {
+    notification.error('请至少选择一个区域进行对比')
+    return
+  }
+
+  // 按日期范围时验证日期
+  if (compareTimeType.value === 'date') {
+    if (!compareStartDate.value || !compareEndDate.value) {
+      notification.error('请选择开始和结束日期')
+      return
+    }
+  }
+
+  showAreaCompareSelect.value = false
+
+  try {
+    // 获取区域名称列表
+    const areaNames = compareAreaIds.value.map(id => {
+      const area = authorizedAreaList.value.find(a => a.id === id)
+      return area ? area.areaName : ''
+    })
+
+    // 构建请求参数
+    let params = {
+      areaIds: compareAreaIds.value.join(','),
+      timeType: compareTimeType.value
+    }
+
+    if (compareTimeType.value === 'period') {
+      params.period = comparePeriod.value
+    } else {
+      params.startDate = compareStartDate.value
+      params.endDate = compareEndDate.value
+    }
+
+    // 调用后端API获取对比数据
+    const response = await request.get('/statistics/compare', { params })
+    const data = response.data
+
+    if (data && data.areas) {
+      renderAreaCompareChart({
+        areas: data.areas,
+        temperature: data.temperature || [],
+        humidity: data.humidity || [],
+        pm25: data.pm25 || []
+      })
+      notification.success('区域对比数据已加载')
+    } else {
+      notification.error('未获取到对比数据')
+    }
+  } catch (error) {
+    notification.error('加载对比数据失败')
+  }
+}
+
 const renderAreaCompareChart = (data) => {
   const chartDom = document.getElementById('area-compare-chart')
   if (!chartDom) return
@@ -3021,64 +3506,214 @@ const generateReport = async () => {
   try {
     const areaId = statsAreaId.value || 1
     const areaName = areaList.value.find(a => a.id == areaId)?.areaName || '全部区域'
-    const response = await request.get(`/statistics/trend?areaId=${areaId}&period=${reportType.value === 'month' ? 'month' : 'year'}`)
-    const data = response.data
-    if (!data) { notification.error('获取数据失败'); return }
+    const period = reportType.value === 'month' ? 'month' : 'year'
+    const periodName = reportType.value === 'month' ? '月度' : '年度'
 
-    const rows = [['时间', '温度(℃)', '湿度(%)', 'PM2.5(μg/m³)']]
-    data.xAxis.forEach((x, i) => rows.push([x, data.temperature[i], data.humidity[i], data.pm25[i]]))
-    const csv = rows.map(r => r.join(',')).join('\n')
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${areaName}_${reportType.value === 'month' ? '月度' : '年度'}报告.csv`
-    a.click()
-    URL.revokeObjectURL(url)
-    notification.success('报告已生成并下载')
+    const [trendRes, alertRes] = await Promise.all([
+      request.get(`/statistics/trend?areaId=${areaId}&period=${period}`),
+      request.get(`/statistics/alert?areaId=${areaId}`)
+    ])
+
+    const trendData = trendRes.data
+    const alertData = alertRes.data
+
+    if (!trendData && !alertData) {
+      notification.error('获取数据失败')
+      return
+    }
+
+    let alertList = []
+    try {
+      const alertListRes = await request.get(`/alert/records?areaId=${areaId}`)
+      alertList = alertListRes.data || []
+    } catch (e) {}
+
+    if (reportFormat.value === 'pdf') {
+      const printWindow = window.open('', '_blank')
+      if (!printWindow) {
+        notification.error('请允许弹出窗口以生成PDF')
+        return
+      }
+
+      let html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${areaName}_${periodName}监测报告</title>
+        <style>body{font-family:'Microsoft YaHei',Arial,sans-serif;padding:40px;color:#333}
+        h1{text-align:center;color:#1f4e5f;border-bottom:3px solid #c8a96b;padding-bottom:15px}
+        h2{color:#1f4e5f;margin-top:30px;border-left:4px solid #c8a96b;padding-left:10px}
+        .meta{text-align:center;color:#666;margin-bottom:30px}
+        table{width:100%;border-collapse:collapse;margin:15px 0}
+        th,td{border:1px solid #ddd;padding:10px 8px;text-align:center;font-size:13px}
+        th{background:linear-gradient(135deg,#1f4e5f,#2d6a7f);color:white}
+        tr:nth-child(even){background:#f9f9f9}
+        .badge{padding:3px 8px;border-radius:3px;font-size:12px}
+        .badge-high{background:#ff4d4f;color:white}
+        .badge-medium{background:#fa8c16;color:white}
+        .badge-low{background:#52c41a;color:white}
+        .status-pending{color:#fa8c16}.status-processed{color:#52c41a}
+        .summary-box{background:linear-gradient(135deg,rgba(31,78,95,0.1),rgba(200,169,107,0.1));padding:20px;border-radius:8px;margin:20px 0}
+        .summary-box p{margin:8px 0}
+        @media print{body{padding:20px}}</style></head>
+        <body><h1>${areaName} ${periodName}环境监测报告</h1>
+        <p class="meta">生成时间：${new Date().toLocaleString()}</p>
+        <div class="summary-box">
+        <p><strong>报告周期：</strong>${periodName}</p>
+        <p><strong>监测区域：</strong>${areaName}</p>
+        <p><strong>数据点数：</strong>${trendData?.xAxis?.length || 0} 个时间点</p>
+        <p><strong>预警事件：</strong>${alertList.length} 条</p>
+        </div>`
+
+      if (trendData?.xAxis?.length > 0) {
+        html += `<h2>一、环境因子变化趋势</h2><table><thead><tr><th>时间</th><th>温度(℃)</th><th>湿度(%)</th><th>PM2.5(μg/m³)</th></tr></thead><tbody>`
+        trendData.xAxis.forEach((x, i) => {
+          html += `<tr><td>${x}</td><td>${trendData.temperature?.[i] ?? '-'}</td><td>${trendData.humidity?.[i] ?? '-'}</td><td>${trendData.pm25?.[i] ?? '-'}</td></tr>`
+        })
+        html += `</tbody></table>`
+      }
+
+      if (alertData?.levels?.length > 0) {
+        html += `<h2>二、风险预警次数统计</h2><table><thead><tr><th>预警级别</th><th>次数</th></tr></thead><tbody>`
+        alertData.levels.forEach((level, i) => {
+          const cls = level === 'high' ? 'badge-high' : (level === 'medium' ? 'badge-medium' : 'badge-low')
+          html += `<tr><td><span class="badge ${cls}">${getLevelName(level)}</span></td><td>${alertData.values[i]}</td></tr>`
+        })
+        html += `</tbody></table>`
+      }
+
+      if (alertList.length > 0) {
+        html += `<h2>三、预警事件列表</h2><table><thead><tr><th>序号</th><th>区域</th><th>预警级别</th><th>预警信息</th><th>监测因子</th><th>因子值</th><th>状态</th><th>时间</th></tr></thead><tbody>`
+        alertList.forEach((alert, idx) => {
+          const cls = alert.alertLevel === 'high' ? 'badge-high' : (alert.alertLevel === 'medium' ? 'badge-medium' : 'badge-low')
+          const stCls = alert.status === 'pending' ? 'status-pending' : 'status-processed'
+          html += `<tr><td>${idx+1}</td><td>${getAreaName(alert.areaId)}</td><td><span class="badge ${cls}">${getLevelName(alert.alertLevel)}</span></td><td>${alert.alertMessage}</td><td>${getFactorName(alert.factorType)}</td><td>${alert.factorValue}</td><td class="${stCls}">${alert.status === 'pending' ? '待处理' : '已处理'}</td><td>${formatDateTime(alert.createTime)}</td></tr>`
+        })
+        html += `</tbody></table>`
+      }
+
+      html += `<script>window.onload=function(){window.print()}<\/script></body></html>`
+      printWindow.document.write(html)
+      printWindow.document.close()
+      notification.success('PDF报告已生成，请在打印对话框中选择"另存为PDF"')
+    } else {
+      let csv = `${areaName}_${periodName}监测报告\n生成时间,${new Date().toLocaleString()}\n\n`
+      if (trendData?.xAxis) {
+        csv += '【环境因子变化趋势】\n时间,温度(℃),湿度(%),PM2.5(μg/m³)\n'
+        trendData.xAxis.forEach((x, i) => {
+          csv += `${x},${trendData.temperature?.[i] ?? ''},${trendData.humidity?.[i] ?? ''},${trendData.pm25?.[i] ?? ''}\n`
+        })
+        csv += '\n'
+      }
+      if (alertData?.levels) {
+        csv += '【风险预警次数统计】\n预警级别,次数\n'
+        alertData.levels.forEach((level, i) => { csv += `${getLevelName(level)},${alertData.values[i]}\n` })
+        csv += '\n'
+      }
+      if (alertList.length > 0) {
+        csv += '【预警事件列表】\n序号,区域,预警级别,预警信息,监测因子,因子值,状态,创建时间\n'
+        alertList.forEach((alert, idx) => {
+          csv += `${idx+1},${getAreaName(alert.areaId)},${getLevelName(alert.alertLevel)},"${alert.alertMessage}",${getFactorName(alert.factorType)},${alert.factorValue},${alert.status === 'pending' ? '待处理' : '已处理'},${formatDateTime(alert.createTime)}\n`
+        })
+      }
+      const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${areaName}_${periodName}报告.csv`
+      a.click()
+      URL.revokeObjectURL(url)
+      notification.success('Excel报告已生成并下载')
+    }
   } catch (e) {
     notification.error('生成报告失败')
   }
 }
 
+
+
 const searchHistory = async () => {
+  // 验证地点选择
+  if (!historyAreaId.value) {
+    notification.error('请选择查询地点')
+    return
+  }
+  // 验证日期选择
   if (!historyStartDate.value || !historyEndDate.value) {
     notification.error('请选择开始和结束日期')
     return
   }
+  // 验证日期范围
+  if (!validateHistoryDates()) {
+    return
+  }
   try {
-    const areaId = historyAreaId.value || 1
-    const hours = Math.ceil((new Date(historyEndDate.value) - new Date(historyStartDate.value)) / 3600000)
-    const response = await request.get(`/monitor/trend/${areaId}?hours=${Math.max(hours, 1)}`)
+    const areaId = historyAreaId.value
+    // 传递实际的日期范围给后端
+    const response = await request.get(`/monitor/trend/${areaId}?startDate=${historyStartDate.value}&endDate=${historyEndDate.value}`)
     await nextTick()
+    // 存储历史数据，以便因子切换时使用
+    historyChartData = response.data
     renderHistoryChart(response.data, historyFactorType.value)
   } catch (error) {
     notification.error('查询历史数据失败')
   }
 }
 
+// 存储历史数据
+let historyChartData = null
+
 const renderHistoryChart = (data, factorType) => {
   const chartDom = document.getElementById('history-chart')
   if (!chartDom) return
   if (!historyChart) historyChart = echarts.init(chartDom)
 
-  const seriesMap = {
-    temperature: { name: '温度(℃)', data: data.temperature },
-    humidity: { name: '湿度(%)', data: data.humidity },
-    pm25: { name: 'PM2.5', data: data.pm25 }
+  // 确保数据存在
+  if (!data || !data.times) {
+    historyChart.clear()
+    historyChart.setOption({
+      title: { text: '暂无数据', left: 'center', top: 'center', textStyle: { color: '#999' } },
+      xAxis: { type: 'category', data: [] },
+      yAxis: { type: 'value' },
+      series: []
+    })
+    return
   }
-  const series = factorType && seriesMap[factorType]
-    ? [{ name: seriesMap[factorType].name, type: 'line', data: seriesMap[factorType].data, smooth: true }]
-    : Object.values(seriesMap).map(s => ({ name: s.name, type: 'line', data: s.data, smooth: true }))
 
+  const seriesMap = {
+    temperature: { name: '温度(℃)', data: data.temperature || [] },
+    humidity: { name: '湿度(%)', data: data.humidity || [] },
+    pm25: { name: 'PM2.5', data: data.pm25 || [] }
+  }
+
+  let series
+  let legendData
+  if (factorType && seriesMap[factorType]) {
+    // 单个因子
+    series = [{ name: seriesMap[factorType].name, type: 'line', data: seriesMap[factorType].data, smooth: true, symbol: 'circle', symbolSize: 6 }]
+    legendData = [seriesMap[factorType].name]
+  } else {
+    // 全部因子
+    series = Object.values(seriesMap).map(s => ({ name: s.name, type: 'line', data: s.data, smooth: true, symbol: 'circle', symbolSize: 6 }))
+    legendData = series.map(s => s.name)
+  }
+
+  // 先清除之前的配置，确保series正确更新
+  historyChart.clear()
   historyChart.setOption({
+    title: { text: '', left: 'center', show: false },
     tooltip: { trigger: 'axis' },
-    legend: { data: series.map(s => s.name) },
-    xAxis: { type: 'category', data: data.times || [] },
+    legend: { data: legendData, bottom: 0 },
+    grid: { left: '3%', right: '4%', bottom: '15%', top: '10%', containLabel: true },
+    xAxis: { type: 'category', data: data.times || [], axisLabel: { rotate: 45, fontSize: 11 } },
     yAxis: { type: 'value' },
-    series
+    series: series
   })
 }
+
+// 监听因子类型变化，重新渲染图表
+watch(historyFactorType, (newVal) => {
+  if (historyChartData) {
+    // 确保使用最新的因子类型值
+    renderHistoryChart(historyChartData, historyFactorType.value)
+  }
+})
 
 // 组件卸载时的清理工作由各个子组件自己处理
 // BaiduMapViewer和CesiumViewer都有beforeUnmount钩子
@@ -4561,6 +5196,14 @@ html, body {
   display: none;
 }
 
+.import-upload .selected-file {
+  padding: 8px 12px;
+  background: #e8f5e9;
+  border-radius: 4px;
+  color: #2e7d32;
+  font-size: 14px;
+}
+
 .data-list {
   padding: 20px;
 }
@@ -5090,6 +5733,71 @@ html, body {
   font-size: 14px;
 }
 
+.stats-filter select:disabled {
+  background: #f5f5f5;
+  color: #999;
+  cursor: not-allowed;
+}
+
+/* 未选择地点提示样式 */
+.no-selection-hint {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  background: linear-gradient(135deg, rgba(31,78,95,0.05), rgba(200,169,107,0.05));
+  border-radius: 12px;
+  margin-bottom: 20px;
+  border: 2px dashed #c8a96b;
+}
+
+.hint-icon {
+  font-size: 48px;
+  margin-bottom: 15px;
+}
+
+.hint-text {
+  font-size: 18px;
+  color: #1f4e5f;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.hint-subtext {
+  font-size: 14px;
+  color: #666;
+}
+
+/* 禁用状态样式 */
+.section-disabled {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.section-disabled h3 {
+  color: #999;
+}
+
+.btn-disabled,
+.export-btn:disabled,
+.search-btn:disabled {
+  background: #ccc !important;
+  color: #999 !important;
+  cursor: not-allowed !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.report-form select:disabled,
+.history-filter select:disabled,
+.history-filter input:disabled {
+  background: #f5f5f5;
+  color: #999;
+  cursor: not-allowed;
+  border-color: #ddd;
+}
+
 .chart-card {
   background: #f8f9fa;
   padding: 20px;
@@ -5101,6 +5809,179 @@ html, body {
   margin: 0 0 15px 0;
   color: #333;
   font-size: 16px;
+}
+
+/* 区域对比多选样式 */
+.area-compare-filter {
+  display: flex;
+  gap: 15px;
+  align-items: flex-start;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.multi-select-wrapper {
+  position: relative;
+  flex: 1;
+  min-width: 200px;
+}
+
+.multi-select-trigger {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 15px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background: white;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.multi-select-trigger:hover {
+  border-color: #1f4e5f;
+}
+
+.multi-select-trigger .placeholder {
+  color: #999;
+  font-size: 14px;
+}
+
+.multi-select-trigger .selected-text {
+  color: #333;
+  font-size: 14px;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.multi-select-trigger .arrow {
+  color: #999;
+  font-size: 10px;
+  transition: transform 0.2s;
+}
+
+.multi-select-trigger .arrow-up {
+  transform: rotate(180deg);
+}
+
+.multi-select-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  margin-top: 5px;
+  max-height: 250px;
+  overflow-y: auto;
+  z-index: 100;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.multi-select-option {
+  display: flex;
+  align-items: center;
+  padding: 10px 15px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.multi-select-option:hover {
+  background: #f0f7ff;
+}
+
+.multi-select-option.selected {
+  background: linear-gradient(135deg, rgba(31,78,95,0.1), rgba(200,169,107,0.1));
+}
+
+.multi-select-option .checkbox {
+  width: 18px;
+  height: 18px;
+  border: 2px solid #ddd;
+  border-radius: 4px;
+  margin-right: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: transparent;
+  transition: all 0.2s;
+}
+
+.multi-select-option .checkbox.checked {
+  background: #1f4e5f;
+  border-color: #1f4e5f;
+  color: white;
+}
+
+.compare-btn {
+  padding: 10px 20px;
+  background: linear-gradient(135deg, #1f4e5f, #2d6a7f);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.compare-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(31,78,95,0.3);
+}
+
+.compare-btn:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
+.compare-row {
+  display: flex;
+  gap: 15px;
+  align-items: center;
+  width: 100%;
+  flex-wrap: wrap;
+}
+
+.compare-time-type {
+  padding: 10px 15px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 14px;
+  background: white;
+  cursor: pointer;
+}
+
+.compare-period-wrapper,
+.compare-date-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.compare-period-select {
+  padding: 10px 15px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 14px;
+  background: white;
+  cursor: pointer;
+}
+
+.compare-date-input {
+  padding: 10px 15px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 14px;
+  background: white;
+}
+
+.date-separator {
+  color: #666;
+  font-size: 14px;
 }
 
 .report-section, .history-section {

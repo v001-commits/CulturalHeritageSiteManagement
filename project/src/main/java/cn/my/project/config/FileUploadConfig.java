@@ -17,7 +17,7 @@ public class FileUploadConfig {
      */
     private String[] allowedTypes = {
         "jpg", "jpeg", "png", "gif", "bmp", "webp",  // 图片格式
-        "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt",  // 文档格式
+        "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "csv",  // 文档格式
         "mp4", "avi", "mov", "wmv", "flv", "mkv",  // 视频格式
         "mp3", "wav", "flac", "aac", "ogg",  // 音频格式
         "zip", "rar", "7z", "tar", "gz"  // 压缩格式

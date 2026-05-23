@@ -1,6 +1,9 @@
 package cn.my.project.controller;
 
 import cn.my.project.common.Result;
+import cn.my.project.entity.MonitorArea;
+import cn.my.project.service.MonitorAreaService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 import java.util.*;
 
@@ -8,6 +11,9 @@ import java.util.*;
 @RequestMapping("/statistics")
 @CrossOrigin
 public class StatisticsController {
+
+    @Autowired
+    private MonitorAreaService areaService;
 
     @GetMapping("/trend")
     public Result<Map<String, Object>> getTrend(@RequestParam Long areaId, @RequestParam String period) {
@@ -49,13 +55,113 @@ public class StatisticsController {
         return Result.success(data);
     }
 
+    /**
+     * 区域对比接口
+     * @param areaIds 逗号分隔的区域ID列表
+     * @param timeType 时间类型: period(按周期) 或 date(按日期范围)
+     * @param period 周期类型: month(月度), quarter(季度), year(年度)
+     * @param startDate 开始日期 (当timeType为date时)
+     * @param endDate 结束日期 (当timeType为date时)
+     */
     @GetMapping("/compare")
-    public Result<Map<String, Object>> getAreaCompare() {
-        Map<String, Object> data = new HashMap<>();
-        data.put("areas", Arrays.asList("故宫", "长城", "兵马俑"));
-        data.put("temperature", Arrays.asList(25.0, 22.0, 28.0));
-        data.put("humidity", Arrays.asList(65.0, 55.0, 70.0));
-        data.put("pm25", Arrays.asList(45.0, 38.0, 52.0));
-        return Result.success(data);
+    public Result<Map<String, Object>> getAreaCompare(
+            @RequestParam String areaIds,
+            @RequestParam String timeType,
+            @RequestParam(required = false) String period,
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate) {
+
+        Map<String, Object> result = new HashMap<>();
+        List<String> areaNames = new ArrayList<>();
+        List<Double> avgTemperatures = new ArrayList<>();
+        List<Double> avgHumidity = new ArrayList<>();
+        List<Double> avgPm25 = new ArrayList<>();
+
+        // 解析区域ID列表
+        String[] idArray = areaIds.split(",");
+        Random random = new Random();
+
+        for (String idStr : idArray) {
+            try {
+                Long areaId = Long.parseLong(idStr.trim());
+                // 获取区域名称
+                MonitorArea area = areaService.getById(areaId);
+                String areaName = area != null ? area.getAreaName() : "区域" + areaId;
+                areaNames.add(areaName);
+
+                // 根据时间类型计算平均值
+                if ("date".equals(timeType) && startDate != null && endDate != null) {
+                    // 按日期范围计算
+                    double[] avgs = calculateAverageByDateRange(areaId, startDate, endDate);
+                    avgTemperatures.add(avgs[0]);
+                    avgHumidity.add(avgs[1]);
+                    avgPm25.add(avgs[2]);
+                } else {
+                    // 按周期计算 (默认月度)
+                    String periodType = period != null ? period : "month";
+                    double[] avgs = calculateAverageByPeriod(areaId, periodType);
+                    avgTemperatures.add(avgs[0]);
+                    avgHumidity.add(avgs[1]);
+                    avgPm25.add(avgs[2]);
+                }
+            } catch (NumberFormatException e) {
+                // 跳过无效ID
+            }
+        }
+
+        result.put("areas", areaNames);
+        result.put("temperature", avgTemperatures);
+        result.put("humidity", avgHumidity);
+        result.put("pm25", avgPm25);
+        return Result.success(result);
+    }
+
+    /**
+     * 按日期范围计算平均值
+     */
+    private double[] calculateAverageByDateRange(Long areaId, String startDate, String endDate) {
+        // 实际项目中应从数据库查询指定日期范围内的数据并计算平均值
+        // 这里使用模拟数据
+        Random random = new Random(areaId);
+        double temp = 20 + random.nextDouble() * 15; // 20-35度
+        double humid = 50 + random.nextDouble() * 30; // 50-80%
+        double pm = 30 + random.nextDouble() * 40; // 30-70
+
+        return new double[]{
+            Math.round(temp * 100) / 100.0,
+            Math.round(humid * 100) / 100.0,
+            Math.round(pm * 100) / 100.0
+        };
+    }
+
+    /**
+     * 按周期计算平均值
+     */
+    private double[] calculateAverageByPeriod(Long areaId, String period) {
+        // 实际项目中应从数据库查询指定周期的数据并计算平均值
+        // 这里使用模拟数据，不同周期返回不同的模拟值
+        Random random = new Random(areaId);
+        double baseTemp = 22 + random.nextDouble() * 8;
+        double baseHumid = 55 + random.nextDouble() * 20;
+        double basePm25 = 35 + random.nextDouble() * 25;
+
+        // 根据周期类型调整
+        if ("year".equals(period)) {
+            // 年度平均相对稳定
+            baseTemp = 24 + random.nextDouble() * 4;
+            baseHumid = 60 + random.nextDouble() * 10;
+            basePm25 = 40 + random.nextDouble() * 15;
+        } else if ("quarter".equals(period)) {
+            // 季度平均有变化
+            baseTemp = 20 + random.nextDouble() * 12;
+            baseHumid = 55 + random.nextDouble() * 20;
+            basePm25 = 35 + random.nextDouble() * 25;
+        }
+
+        return new double[]{
+            Math.round(baseTemp * 100) / 100.0,
+            Math.round(baseHumid * 100) / 100.0,
+            Math.round(basePm25 * 100) / 100.0
+        };
     }
 }

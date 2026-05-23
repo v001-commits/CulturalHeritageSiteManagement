@@ -1,19 +1,25 @@
 package cn.my.project.controller;
 
 import cn.my.project.common.Result;
+import cn.my.project.entity.MonitorArea;
 import cn.my.project.entity.SensorData;
+import cn.my.project.service.MonitorAreaService;
 import cn.my.project.service.SensorDataService;
 import cn.my.project.service.UserAreaPermissionService;
 import cn.my.project.utils.JwtUtil;
 import cn.my.project.utils.PermissionUtil;
+import cn.my.project.utils.ExcelUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import javax.servlet.http.HttpServletRequest;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @RestController
@@ -25,6 +31,9 @@ public class SensorDataController {
 
     @Autowired
     private UserAreaPermissionService userAreaPermissionService;
+
+    @Autowired
+    private MonitorAreaService monitorAreaService;
 
     /**
      * 获取传感器数据列表（带区域权限过滤）
@@ -124,5 +133,85 @@ public class SensorDataController {
             return token.substring(7);
         }
         return token;
+    }
+
+    /**
+     * 批量导入传感器数据（支持Excel和CSV格式）
+     */
+    @PostMapping("/import")
+    public Result<Map<String, Object>> importData(@RequestParam("file") MultipartFile file,
+                                                   HttpServletRequest request) {
+        // 获取当前用户信息
+        String token = extractToken(request);
+        Long userId = JwtUtil.getUserId(token);
+        String role = JwtUtil.getRole(token);
+
+        // 检查是否有操作权限（监测人员或管理员）
+        if (!PermissionUtil.canOperateData(role)) {
+            return Result.error("仅监测人员和系统管理员可以导入数据");
+        }
+
+        // 检查文件是否为空
+        if (file == null || file.isEmpty()) {
+            return Result.error("请选择要导入的文件");
+        }
+
+        String fileName = file.getOriginalFilename();
+        if (fileName == null) {
+            return Result.error("文件名无效");
+        }
+
+        // 检查文件格式
+        String lowerFileName = fileName.toLowerCase();
+        if (!lowerFileName.endsWith(".xlsx") && !lowerFileName.endsWith(".xls") && !lowerFileName.endsWith(".csv")) {
+            return Result.error("不支持的文件格式，请使用.xlsx、.xls或.csv格式");
+        }
+
+        try {
+            // 获取所有区域编码映射
+            List<MonitorArea> areas = monitorAreaService.list();
+            Map<String, Long> areaCodeToId = new HashMap<>();
+            for (MonitorArea area : areas) {
+                areaCodeToId.put(area.getAreaCode(), area.getId());
+            }
+
+            // 解析文件
+            List<SensorData> dataList;
+            if (lowerFileName.endsWith(".csv")) {
+                dataList = ExcelUtil.parseCSV(file.getInputStream(), areaCodeToId);
+            } else {
+                dataList = ExcelUtil.parseExcel(file.getInputStream(), fileName, areaCodeToId);
+            }
+
+            if (dataList.isEmpty()) {
+                return Result.error("文件中没有有效数据");
+            }
+
+            // 验证区域权限
+            for (SensorData data : dataList) {
+                if (!PermissionUtil.hasAreaPermission(userId, data.getAreaId(), role)) {
+                    MonitorArea area = monitorAreaService.getById(data.getAreaId());
+                    return Result.error("无权限操作区域 '" + (area != null ? area.getAreaName() : data.getAreaId()) + "' 的数据");
+                }
+            }
+
+            // 批量保存数据
+            boolean success = sensorDataService.saveBatch(dataList);
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("total", dataList.size());
+            result.put("success", success ? dataList.size() : 0);
+            result.put("fileName", fileName);
+
+            if (success) {
+                return Result.success(result);
+            } else {
+                return Result.error("数据导入失败");
+            }
+        } catch (IllegalArgumentException e) {
+            return Result.error("数据格式错误：" + e.getMessage());
+        } catch (Exception e) {
+            return Result.error("导入失败：" + e.getMessage());
+        }
     }
 }

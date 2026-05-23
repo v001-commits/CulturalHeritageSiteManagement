@@ -52,9 +52,9 @@ service.interceptors.request.use(
 // 响应拦截器
 service.interceptors.response.use(
   response => {
-    // 特殊处理blob类型响应，直接返回原始响应
-    if (response.config.responseType === 'blob') {
-      console.log('Blob类型响应，直接返回原始数据')
+    // 特殊处理blob和arraybuffer类型响应，直接返回原始响应
+    if (response.config.responseType === 'blob' || response.config.responseType === 'arraybuffer') {
+      console.log('Blob/ArrayBuffer类型响应，直接返回原始数据，大小:', response.data?.size || response.data?.byteLength)
       return response.data
     }
     

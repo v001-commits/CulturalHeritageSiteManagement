@@ -67,8 +67,23 @@
       </label>
     </div>
     
-    <div id="cesium-container" class="cesium-viewer"></div>
-    
+    <div id="cesium-container" class="cesium-viewer">
+      <!-- WebGL不支持时显示提示 -->
+      <div v-if="webglError" class="webgl-error">
+        <div class="error-content">
+          <h3>🎭 3D地图暂不可用</h3>
+          <p>您的浏览器或设备不支持WebGL，无法加载3D地图。</p>
+          <p>建议您：</p>
+          <ul>
+            <li>使用Chrome、Firefox或Edge等现代浏览器</li>
+            <li>更新显卡驱动程序</li>
+            <li>检查浏览器是否启用了硬件加速</li>
+          </ul>
+          <p>您可以使用上方的2D地图查看遗产地信息。</p>
+        </div>
+      </div>
+    </div>
+
     <!-- 点位详情弹窗 -->
     <div v-if="selectedDevice" class="device-detail-popup">
       <div class="popup-header">
@@ -144,7 +159,8 @@ export default {
       selectedSeason: 'spring',
       selectedTimeSlot: 'morning',
       seasonData: {},
-      timeSlotData: {}
+      timeSlotData: {},
+      webglError: false // WebGL错误状态
     }
   },
   mounted() {
@@ -178,34 +194,52 @@ export default {
     window.removeEventListener('resize', this.handleResize)
   },
   methods: {
+    // 检测WebGL支持
+    checkWebGLSupport() {
+      try {
+        const canvas = document.createElement('canvas')
+        const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl')
+        return !!gl
+      } catch (e) {
+        return false
+      }
+    },
+
     initCesium() {
+      // 先检测WebGL支持
+      if (!this.checkWebGLSupport()) {
+        console.warn('WebGL不支持，跳过Cesium初始化')
+        this.webglError = true
+        return
+      }
+
       // 检查Cesium是否加载
       if (typeof Cesium === 'undefined') {
         console.error('Cesium未加载，请在index.html中引入Cesium库')
         setTimeout(() => this.initCesium(), 1000)
         return
       }
-      
+
       const container = document.getElementById('cesium-container')
       if (!container) {
         console.error('Cesium容器不存在')
         setTimeout(() => this.initCesium(), 500)
         return
       }
-      
+
       console.log('开始创建Cesium，容器尺寸:', container.offsetWidth, 'x', container.offsetHeight)
-      
+
       // 如果容器高度为0，延迟初始化
       if (container.offsetHeight === 0) {
         console.warn('Cesium容器高度为0，延迟初始化')
         setTimeout(() => this.initCesium(), 500)
         return
       }
-      
+
       try {
         // 禁用Cesium Ion默认Token，避免401错误
         Cesium.Ion.defaultAccessToken = undefined
-        
+
         this.viewer = new Cesium.Viewer('cesium-container', {
           // 使用默认椭球地形（不需要Token）
           terrainProvider: new Cesium.EllipsoidTerrainProvider(),
@@ -230,10 +264,22 @@ export default {
           shadows: false,
           shouldAnimate: true,
           selectionIndicator: false, // 禁用选中指示器，避免相机锁定
-          infoBox: false // 禁用内置InfoBox，使用自定义弹窗
+          infoBox: false, // 禁用内置InfoBox，使用自定义弹窗
+          contextOptions: {
+            webgl: {
+              alpha: false,
+              depth: true,
+              stencil: false,
+              antialias: true,
+              premultipliedAlpha: true,
+              preserveDrawingBuffer: false,
+              failIfMajorPerformanceCaveat: false
+            }
+          }
         })
-        
+
         console.log('Cesium创建成功')
+        this.webglError = false
         
         // 启用光照效果
         this.viewer.scene.globe.enableLighting = false
@@ -261,6 +307,14 @@ export default {
         this.viewer.scene.requestRender()
       } catch (error) {
         console.error('Cesium初始化失败:', error)
+        this.webglError = true
+        // 尝试清理可能的残留资源
+        if (this.viewer) {
+          try {
+            this.viewer.destroy()
+          } catch (e) {}
+          this.viewer = null
+        }
       }
     },
     
@@ -1209,5 +1263,51 @@ export default {
 
 .cesium-controls::-webkit-scrollbar-thumb:hover {
   background: #555;
+}
+
+/* WebGL错误提示样式 */
+.webgl-error {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  z-index: 10;
+}
+
+.error-content {
+  text-align: center;
+  color: white;
+  padding: 40px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  max-width: 500px;
+}
+
+.error-content h3 {
+  font-size: 24px;
+  margin-bottom: 20px;
+  color: #f8b500;
+}
+
+.error-content p {
+  margin: 15px 0;
+  line-height: 1.6;
+}
+
+.error-content ul {
+  text-align: left;
+  margin: 20px auto;
+  padding-left: 25px;
+  max-width: 350px;
+}
+
+.error-content li {
+  margin: 8px 0;
+  color: #ccc;
 }
 </style>

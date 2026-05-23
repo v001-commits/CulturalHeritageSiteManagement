@@ -82,6 +82,7 @@
             </div>
             <div class="file-actions">
                 <button @click="handlePreview(file)" class="preview-link">预览</button>
+                <button @click="handleDownload(file)" class="download-link">下载</button>
               </div>
           </div>
         </div>
@@ -97,9 +98,13 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { uploadFile, uploadFiles, deleteFile, getSupportedTypes, getUploadConfig } from '../api/file'
+import { uploadFile, uploadFiles, deleteFile, getSupportedTypes, getUploadConfig, getFilePreviewUrl, getFileDownloadUrl } from '../api/file'
 import request from '../api/request'
 import notification from '../utils/notification'
+
+// Office 文档渲染库（需要安装：npm install mammoth xlsx）
+import mammoth from 'mammoth'
+import * as XLSX from 'xlsx'
 
 // Props
 const props = defineProps({
@@ -130,7 +135,7 @@ const uploadedFiles = ref([])
 const errorMessage = ref('')
 const previewUrls = ref({}) // 用于存储图片预览的blob URLs
 // 设置默认支持的文件类型，避免API调用失败时无法使用
-const allowedTypes = ref(['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'zip', 'rar', 'jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'mp4', 'avi', 'mp3', 'wav'])
+const allowedTypes = ref(['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'csv', 'zip', 'rar', 'jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'mp4', 'avi', 'mp3', 'wav'])
 const maxFileSize = ref(100 * 1024 * 1024) // 100MB
 
 // 计算属性
@@ -367,29 +372,401 @@ const deleteUploadedFile = async (id) => {
 // 处理文件预览
 const handlePreview = async (file) => {
   try {
+    const fileType = file.fileType?.toLowerCase()
+
+    // Office 文档类型（使用前端渲染）
+    const officePreviewTypes = ['doc', 'docx', 'xls', 'xlsx']
+
+    if (officePreviewTypes.includes(fileType)) {
+      // Office 文档使用前端渲染
+      await handleOfficePreview(file)
+      return
+    }
+
+    // PPT 暂不支持预览
+    if (['ppt', 'pptx'].includes(fileType)) {
+      notification.warning('PPT文档暂不支持在线预览，请下载后查看')
+      return
+    }
+
+    // 浏览器原生支持预览的类型
+    const browserPreviewTypes = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'pdf', 'txt', 'csv', 'mp4', 'mp3', 'wav', 'avi', 'mov']
+
+    if (!browserPreviewTypes.includes(fileType)) {
+      notification.warning('该文件类型无法在浏览器中直接预览，建议下载后查看')
+      return
+    }
+
     notification.info('正在加载预览文件...')
-    
-    // 使用axios发送带token的请求获取文件流
+
+    const previewUrl = getFilePreviewUrl(file.id)
+
+    // 使用axios发送带token的请求获取文件流 - 不单独设置headers，让拦截器自动处理
     const response = await request({
-      url: file.fileUrl,
+      url: previewUrl,
       method: 'get',
-      responseType: 'blob',
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
-      }
+      responseType: 'blob'
     })
-    
-    // 创建blob URL
-    const blobUrl = URL.createObjectURL(response)
-    
-    // 在新标签页中打开预览
-    window.open(blobUrl, '_blank')
-    
+
+    // 获取文件的 MIME type
+    const mimeType = getMimeType(file.fileType)
+
+    // 创建带 MIME type 的 blob
+    const blob = new Blob([response], { type: mimeType })
+    const blobUrl = URL.createObjectURL(blob)
+
+    // 对于文本类型（txt, csv），直接在窗口中显示内容
+    if (['txt', 'csv'].includes(fileType)) {
+      const previewWindow = window.open('', '_blank')
+      if (previewWindow) {
+        const reader = new FileReader()
+        reader.onload = (e) => {
+          previewWindow.document.write(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+              <meta charset="UTF-8">
+              <title>${file.originalName}</title>
+              <style>
+                body { font-family: monospace; padding: 20px; white-space: pre-wrap; word-wrap: break-word; }
+              </style>
+            </head>
+            <body>${e.target.result}</body>
+            </html>
+          `)
+          previewWindow.document.close()
+        }
+        reader.readAsText(blob)
+        notification.success('文件预览成功')
+      } else {
+        notification.warning('预览窗口被拦截，请允许弹窗')
+      }
+      return
+    }
+
+    // 对于图片、PDF、视频、音频，使用新窗口打开
+    const previewWindow = window.open('', '_blank')
+    if (!previewWindow) {
+      notification.warning('预览窗口被拦截，请允许弹窗')
+      return
+    }
+
+    // 根据文件类型生成预览内容
+    if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'].includes(fileType)) {
+      previewWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <title>${file.originalName}</title>
+          <style>
+            body { margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; background: #f0f0f0; }
+            img { max-width: 100%; max-height: 100vh; object-fit: contain; }
+          </style>
+        </head>
+        <body>
+          <img src="${blobUrl}" alt="${file.originalName}">
+        </body>
+        </html>
+      `)
+    } else if (fileType === 'pdf') {
+      previewWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <title>${file.originalName}</title>
+          <style>
+            body { margin: 0; }
+            iframe { width: 100vw; height: 100vh; border: none; }
+          </style>
+        </head>
+        <body>
+          <iframe src="${blobUrl}" type="application/pdf"></iframe>
+        </body>
+        </html>
+      `)
+    } else if (['mp4', 'avi', 'mov'].includes(fileType)) {
+      previewWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <title>${file.originalName}</title>
+          <style>
+            body { margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; background: #000; }
+            video { max-width: 100%; max-height: 100vh; }
+          </style>
+        </head>
+        <body>
+          <video controls autoplay>
+            <source src="${blobUrl}" type="${mimeType}">
+            您的浏览器不支持视频播放
+          </video>
+        </body>
+        </html>
+      `)
+    } else if (['mp3', 'wav'].includes(fileType)) {
+      previewWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <title>${file.originalName}</title>
+          <style>
+            body { margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; background: #f5f5f5; }
+            .player { text-align: center; }
+            h2 { color: #333; margin-bottom: 20px; }
+            audio { width: 300px; }
+          </style>
+        </head>
+        <body>
+          <div class="player">
+            <h2>🎵 ${file.originalName}</h2>
+            <audio controls autoplay>
+              <source src="${blobUrl}" type="${mimeType}">
+              您的浏览器不支持音频播放
+            </audio>
+          </div>
+        </body>
+        </html>
+      `)
+    }
+
+    previewWindow.document.close()
     notification.success('文件预览成功')
   } catch (error) {
     console.error('文件预览失败:', error)
     notification.error('文件预览失败: ' + (error.message || '未知错误'))
   }
+}
+
+// 处理 Office 文档预览（本地渲染方案）
+const handleOfficePreview = async (file) => {
+  console.log('开始处理Office文档预览，文件:', file)
+
+  try {
+    const fileType = file.fileType?.toLowerCase()
+    console.log('文件类型:', fileType)
+    notification.info('正在加载Office文档预览...')
+
+    // 获取文件内容 - 注意：不单独设置headers，让拦截器自动处理token
+    const previewUrl = getFilePreviewUrl(file.id)
+    console.log('预览URL:', previewUrl)
+
+    const response = await request({
+      url: previewUrl,
+      method: 'get',
+      responseType: 'arraybuffer'
+    })
+
+    console.log('Office文档数据获取成功，类型:', fileType, '数据大小:', response?.byteLength)
+
+    if (!response || response.byteLength === 0) {
+      throw new Error('获取文件内容失败，数据为空')
+    }
+
+    let htmlContent = ''
+
+    if (fileType === 'doc' || fileType === 'docx') {
+      console.log('开始渲染Word文档...')
+      // 使用 mammoth 渲染 Word 文档
+      htmlContent = await renderWordDocument(response)
+      console.log('Word文档渲染完成，内容长度:', htmlContent.length)
+    } else if (fileType === 'xls' || fileType === 'xlsx') {
+      console.log('开始渲染Excel文档...')
+      // 使用 SheetJS 渲染 Excel 文档
+      htmlContent = renderExcelDocument(response)
+      console.log('Excel文档渲染完成，内容长度:', htmlContent.length)
+    } else if (fileType === 'ppt' || fileType === 'pptx') {
+      // PPT 暂不支持，提示下载
+      notification.warning('PPT文档暂不支持在线预览，请下载后查看')
+      return
+    }
+
+    console.log('准备打开预览窗口...')
+
+    // 在新窗口中显示渲染结果
+    const previewWindow = window.open('', '_blank')
+    if (!previewWindow) {
+      notification.warning('预览窗口被拦截，请允许弹窗')
+      return
+    }
+
+    console.log('预览窗口已打开，开始写入内容...')
+
+    previewWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>${file.originalName} - 预览</title>
+        <style>
+          * { box-sizing: border-box; margin: 0; padding: 0; }
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+          }
+          .header {
+            background: #fff;
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+          }
+          .header h1 { font-size: 18px; color: #333; }
+          .content {
+            background: #fff;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            min-height: 400px;
+            overflow-x: auto;
+          }
+          table { border-collapse: collapse; width: 100%; }
+          th, td { border: 1px solid #ddd; padding: 8px 12px; text-align: left; }
+          th { background: #f0f0f0; font-weight: 600; }
+          tr:nth-child(even) { background: #fafafa; }
+          tr:hover { background: #f5f5f5; }
+          img { max-width: 100%; height: auto; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>📄 ${file.originalName}</h1>
+        </div>
+        <div class="content">
+          ${htmlContent}
+        </div>
+      </body>
+      </html>
+    `)
+    previewWindow.document.close()
+
+    console.log('预览内容写入完成')
+    notification.success('文档预览成功')
+  } catch (error) {
+    console.error('Office文档预览失败:', error)
+    notification.error('Office文档预览失败: ' + (error.message || '未知错误'))
+  }
+}
+
+// 渲染 Word 文档
+const renderWordDocument = async (arrayBuffer) => {
+  try {
+    const result = await mammoth.convertToHtml({ arrayBuffer: arrayBuffer })
+    return result.value || '<p style="color: #999;">文档内容为空</p>'
+  } catch (error) {
+    console.error('Word文档渲染失败:', error)
+    throw new Error('Word文档解析失败')
+  }
+}
+
+// 渲染 Excel 文档
+const renderExcelDocument = (arrayBuffer) => {
+  try {
+    const workbook = XLSX.read(arrayBuffer, { type: 'array' })
+    let html = ''
+
+    // 遍历所有工作表
+    workbook.SheetNames.forEach((sheetName, index) => {
+      if (workbook.SheetNames.length > 1) {
+        html += `<h3 style="margin: ${index > 0 ? '30px' : '0'} 0 15px 0; color: #333;">${sheetName}</h3>`
+      }
+      const sheet = workbook.Sheets[sheetName]
+      const htmlTable = XLSX.utils.sheet_to_html(sheet, { editable: false })
+      // 清理 XLSX 生成的多余样式
+      html += htmlTable.replace(/<table[^>]*>/, '<table>')
+    })
+
+    return html || '<p style="color: #999;">文档内容为空</p>'
+  } catch (error) {
+    console.error('Excel文档渲染失败:', error)
+    throw new Error('Excel文档解析失败')
+  }
+}
+
+// 处理文件下载
+const handleDownload = async (file) => {
+  console.log('开始处理文件下载，文件:', file)
+
+  try {
+    notification.info('正在下载文件...')
+
+    const downloadUrl = getFileDownloadUrl(file.id)
+    console.log('下载URL:', downloadUrl)
+
+    // 使用axios发送带token的请求获取文件流 - 不单独设置headers，让拦截器自动处理
+    const response = await request({
+      url: downloadUrl,
+      method: 'get',
+      responseType: 'blob'
+    })
+
+    console.log('文件数据获取成功，大小:', response?.size, '类型:', response?.type)
+
+    if (!response || response.size === 0) {
+      throw new Error('获取文件内容失败，数据为空')
+    }
+
+    // 创建下载链接
+    const blob = new Blob([response], { type: getMimeType(file.fileType) })
+    const blobUrl = URL.createObjectURL(blob)
+    console.log('Blob URL创建成功:', blobUrl)
+
+    const link = document.createElement('a')
+    link.href = blobUrl
+    link.download = file.originalName
+    link.style.display = 'none'
+    document.body.appendChild(link)
+    console.log('下载链接已创建，准备触发点击...')
+
+    link.click()
+    console.log('点击已触发')
+
+    // 延迟释放资源，确保下载完成
+    setTimeout(() => {
+      document.body.removeChild(link)
+      URL.revokeObjectURL(blobUrl)
+      console.log('资源已释放')
+      notification.success('文件下载完成')
+    }, 1000)
+  } catch (error) {
+    console.error('文件下载失败:', error)
+    notification.error('文件下载失败: ' + (error.message || '未知错误'))
+  }
+}
+
+// 获取文件的 MIME type
+const getMimeType = (fileType) => {
+  const mimeTypes = {
+    'jpg': 'image/jpeg',
+    'jpeg': 'image/jpeg',
+    'png': 'image/png',
+    'gif': 'image/gif',
+    'bmp': 'image/bmp',
+    'webp': 'image/webp',
+    'pdf': 'application/pdf',
+    'txt': 'text/plain',
+    'csv': 'text/csv',
+    'doc': 'application/msword',
+    'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'xls': 'application/vnd.ms-excel',
+    'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'ppt': 'application/vnd.ms-powerpoint',
+    'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    'mp4': 'video/mp4',
+    'avi': 'video/x-msvideo',
+    'mov': 'video/quicktime',
+    'wmv': 'video/x-ms-wmv',
+    'mp3': 'audio/mpeg',
+    'wav': 'audio/wav',
+    'zip': 'application/zip',
+    'rar': 'application/x-rar-compressed'
+  }
+  return mimeTypes[fileType?.toLowerCase()] || 'application/octet-stream'
 }
 
 const isImageFile = (fileType) => {
@@ -407,6 +784,7 @@ const getFileIcon = (fileType) => {
     'ppt': '📽️',
     'pptx': '📽️',
     'txt': '📝',
+    'csv': '📋',
     'zip': '📦',
     'rar': '📦',
     'mp4': '🎬',
@@ -687,7 +1065,7 @@ const formatDate = (dateString) => {
   gap: 10px;
 }
 
-.preview-link, .delete-link {
+.preview-link, .delete-link, .download-link {
   padding: 6px 12px;
   border-radius: 4px;
   font-size: 12px;
@@ -703,6 +1081,15 @@ const formatDate = (dateString) => {
 
 .preview-link:hover {
   background-color: #5568d3;
+}
+
+.download-link {
+  background-color: #4caf50;
+  color: white;
+}
+
+.download-link:hover {
+  background-color: #45a049;
 }
 
 .delete-link {
